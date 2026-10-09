@@ -13,3 +13,8 @@
 *.log
 .DS_Store
 /edge_full.png
+
+# Device frame artwork is not redistributable: it is bundled into locally
+# built installers only. See assets/README.md.
+/assets/*
+!/assets/README.md
