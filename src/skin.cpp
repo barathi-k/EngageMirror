@@ -1,5 +1,6 @@
 #include "skin.h"
 
+#include <algorithm>
 #include <vector>
 
 #ifdef _WIN32
@@ -227,13 +228,45 @@ bool Analyse(const std::vector<uint8_t> &px, int w, int h, Skin &s) {
     }
     if (sx1 < sx0 || sy1 < sy0) return false;
 
+    // The body is where most rows and columns start and end, not the absolute
+    // extremes: side buttons stick out past it on phone frames, and taking
+    // them as the edge widened the body box and bent its shadow out of shape.
+    auto median = [](std::vector<int> v) {
+        v.erase(std::remove(v.begin(), v.end(), -1), v.end());
+        if (v.empty()) return -1;
+        std::nth_element(v.begin(), v.begin() + v.size() / 2, v.end());
+        return v[v.size() / 2];
+    };
+    const int mx0 = median(rowL), mx1 = median(rowR);
+    const int my0 = median(std::vector<int>(colT.begin() + mx0, colT.begin() + mx1 + 1));
+    const int my1 = median(std::vector<int>(colB.begin() + mx0, colB.begin() + mx1 + 1));
+    if (mx0 < 0 || mx1 <= mx0 || my0 < 0 || my1 <= my0) return false;
+
     s.imgW = w;
     s.imgH = h;
-    s.bodyX0 = bx0; s.bodyY0 = by0; s.bodyX1 = bx1; s.bodyY1 = by1;
+    s.bodyX0 = mx0; s.bodyY0 = my0; s.bodyX1 = mx1; s.bodyY1 = my1;
     s.scrX0 = sx0; s.scrY0 = sy0; s.scrX1 = sx1; s.scrY1 = sy1;
 
-    // Corner radius: how far down the body's left edge before it turns opaque.
-    s.cornerRadius = (colT[bx0] >= 0) ? (float)(colT[bx0] - by0) : 0.0f;
+    // Corner radius, for the shadow: the circular radius that cuts the corner
+    // as deeply along the diagonal as the artwork does (a circle's corner sits
+    // r(1 - 1/sqrt2) in from the bounding box). Modern devices round their
+    // corners with a continuous-curvature curve that reaches further in at 45
+    // degrees than its tangent points suggest; measuring anywhere else let the
+    // shadow's corners poke out past the body.
+    int k = 0;
+    const int maxK = std::min(mx1 - mx0, my1 - my0) / 2;
+    while (k < maxK && !opaque(mx0 + k, my0 + k)) k++;
+    s.cornerRadius = (float)k / (1.0f - 0.70710678f);
+
+    // Same measurement for the screen cutout, walking in from its corner
+    // until the glass starts. On a thin-bezel phone that corner can lie
+    // outside the device altogether, so cross any exterior first, then the
+    // bezel.
+    k = 0;
+    const int maxS = std::min(sx1 - sx0, sy1 - sy0) / 2;
+    while (k < maxS && !opaque(sx0 + k, sy0 + k)) k++;
+    while (k < maxS && opaque(sx0 + k, sy0 + k)) k++;
+    s.screenRadius = (float)k / (1.0f - 0.70710678f);
     return true;
 }
 
@@ -267,9 +300,9 @@ bool LoadSkin(Gpu &gpu, const std::string &name, Skin &out) {
     if (!UploadSkin(gpu, pixels, w, h, out.srv)) return false;
 
     out.valid = true;
-    LOGI("skin: %s.png %dx%d  body %dx%d  screen %dx%d (%.4f) at (%d,%d)  radius %.0f",
+    LOGI("skin: %s.png %dx%d  body %dx%d r%.0f  screen %dx%d (%.4f) at (%d,%d) r%.0f",
          name.c_str(), w, h, out.bodyX1 - out.bodyX0 + 1, out.bodyY1 - out.bodyY0 + 1,
-         out.ScreenW(), out.ScreenH(), out.ScreenAspect(), out.scrX0, out.scrY0,
-         out.cornerRadius);
+         out.cornerRadius, out.ScreenW(), out.ScreenH(), out.ScreenAspect(), out.scrX0,
+         out.scrY0, out.screenRadius);
     return true;
 }

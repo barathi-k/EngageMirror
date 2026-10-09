@@ -167,6 +167,56 @@ const char *PhoneName(int major, int minor) {
     return major >= 19 ? "iPhone" : "iPhone (older)";
 }
 
+// Photographic frame for an iPhone: assets/iphone_<key>.png, fetched by
+// scripts/fetch-device-frames.py. Each model maps to the frame whose screen
+// has the same pixel dimensions (the 12 Pro and 13 are both 1170x2532), so the
+// cutout matches the stream exactly; where no frame shares the resolution the
+// nearest look-alike is used and the picture is letterboxed inside it. A
+// missing file falls back to the procedural frame.
+const char *PhoneSkin(int major, int minor) {
+    switch (major) {
+    case 8:
+        return (minor == 2) ? "iphone_8_plus" : "iphone_6s"; // 6s Plus / 6s, SE
+    case 9:
+        return (minor == 2 || minor == 4) ? "iphone_8_plus" : "iphone_8"; // 7
+    case 10:
+        if (minor == 3 || minor == 6) return "iphone_xs"; // X
+        return (minor == 2 || minor == 5) ? "iphone_8_plus" : "iphone_8";
+    case 11:
+        if (minor == 8) return "iphone_11";                       // XR
+        return (minor == 2) ? "iphone_xs" : "iphone_11_pro_max";  // XS / XS Max
+    case 12:
+        if (minor == 3) return "iphone_11_pro";
+        if (minor == 5) return "iphone_11_pro_max";
+        return (minor == 8) ? "iphone_8" : "iphone_11"; // SE 2 / 11
+    case 13:
+        if (minor == 1) return "iphone_13_mini";                     // 12 mini
+        return (minor == 4) ? "iphone_12_pro_max" : "iphone_13";     // 12, 12 Pro
+    case 14:
+        if (minor == 4) return "iphone_13_mini";
+        if (minor == 6) return "iphone_8";                           // SE 3
+        if (minor == 3 || minor == 8) return "iphone_12_pro_max";    // 13 Pro Max, 14 Plus
+        return "iphone_13";                                          // 13, 13 Pro, 14
+    case 15:
+        if (minor == 3) return "iphone_14_pro_max";
+        if (minor == 5) return "iphone_16_plus";                     // 15 Plus
+        return "iphone_15";                                          // 14 Pro, 15
+    case 16:
+        return (minor == 2) ? "iphone_15_pro_max" : "iphone_15";     // 15 Pro Max / 15 Pro
+    case 17:
+        if (minor == 1) return "iphone_16_pro";
+        if (minor == 2) return "iphone_16_pro_max";
+        if (minor == 4) return "iphone_16_plus";
+        return (minor == 5) ? "iphone_13" : "iphone_16";             // 16e / 16
+    case 18:
+        if (minor == 2) return "iphone_17_pro_max";
+        return (minor == 4) ? "iphone_air" : "iphone_17_pro";        // Air / 17, 17 Pro
+    default:
+        break;
+    }
+    return major >= 19 ? "iphone_17_pro" : "";
+}
+
 const char *PadName(int major) {
     if (major >= 16) return "iPad Pro (M4)";
     if (major >= 14) return "iPad";
@@ -201,6 +251,7 @@ DeviceProfile ResolveDevice(const std::string &model, const std::string &name) {
             if (id.major > 0 && id.major <= 7) p.defaultAspect = 9.0f / 16.0f;
         }
         p.displayName = PhoneName(id.major, id.minor);
+        p.skinName = PhoneSkin(id.major, id.minor);
         break;
     }
     case Family::iPad: {

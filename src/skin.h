@@ -23,6 +23,9 @@ struct Skin {
     int scrX0 = 0, scrY0 = 0, scrX1 = 0, scrY1 = 0;
     // Body corner radius in image pixels (used for the drop shadow).
     float cornerRadius = 0.0f;
+    // Screen cutout corner radius in image pixels: the dark backing and the
+    // video are clipped to it, so neither shows past a thin bezel's corner.
+    float screenRadius = 0.0f;
 
     TexView srv;
 

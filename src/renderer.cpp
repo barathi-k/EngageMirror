@@ -309,7 +309,9 @@ DeviceLayout ComputeDeviceLayout(const DeviceProfile &p, const Skin *skin,
         L.scrCy = ((skin->scrY0 + skin->scrY1 + 1) * 0.5f - bodyCy) * k;
         L.scrHx = skin->ScreenW() * 0.5f * k;
         L.scrHy = skin->ScreenH() * 0.5f * k;
-        L.scrRadius = 0.0f; // the skin's own artwork rounds the corners
+        // The artwork rounds the glass, but the backing and video under it
+        // must follow: a square corner shows past a thin bezel.
+        L.scrRadius = skin->screenRadius * k;
 
         L.skinCx = (skin->imgW * 0.5f - bodyCx) * k;
         L.skinCy = (skin->imgH * 0.5f - bodyCy) * k;
