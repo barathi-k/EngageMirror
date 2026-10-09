@@ -1,7 +1,16 @@
 #include "airplay_server.h"
 
+#ifdef _WIN32
 #include <winsock2.h>
 #include <iphlpapi.h>
+#else
+#include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <net/if.h>
+#include <net/if_dl.h>
+#include <netinet/in.h>
+#include <map>
+#endif
 
 #include <cstdio>
 #include <cstring>
@@ -124,6 +133,53 @@ extern "C" void cb_log(void *cls, int level, const char *msg) {
 } // namespace
 
 // ---------------------------------------------------------------------------
+#ifdef __APPLE__
+bool AirPlayServer::FindMac(std::string &macText, std::vector<char> &macBytes) {
+    ifaddrs *list = nullptr;
+    if (getifaddrs(&list) != 0) return false;
+
+    // An interface qualifies when it is up, has a 6-byte hardware address and
+    // a routable IPv4 address. Prefer the lowest-numbered enN, which is the
+    // built-in Ethernet or Wi-Fi; utun/awdl/bridge interfaces never have both.
+    std::map<std::string, std::vector<uint8_t>> macs;
+    std::map<std::string, bool> hasIpv4;
+    for (ifaddrs *a = list; a; a = a->ifa_next) {
+        if (!a->ifa_addr || !(a->ifa_flags & IFF_UP) || (a->ifa_flags & IFF_LOOPBACK)) continue;
+        if (a->ifa_addr->sa_family == AF_LINK) {
+            auto *sdl = (sockaddr_dl *)a->ifa_addr;
+            if (sdl->sdl_alen == 6) {
+                auto *p = (const uint8_t *)LLADDR(sdl);
+                macs[a->ifa_name].assign(p, p + 6);
+            }
+        } else if (a->ifa_addr->sa_family == AF_INET) {
+            const uint32_t host = ntohl(((sockaddr_in *)a->ifa_addr)->sin_addr.s_addr);
+            if ((host & 0xFFFF0000u) != 0xA9FE0000u) hasIpv4[a->ifa_name] = true; // not 169.254
+        }
+    }
+    freeifaddrs(list);
+
+    std::string chosen;
+    for (const auto &kv : macs) {
+        if (!hasIpv4[kv.first]) continue;
+        const bool en = kv.first.rfind("en", 0) == 0;
+        const bool chosenEn = chosen.rfind("en", 0) == 0;
+        if (chosen.empty() || (en && !chosenEn) ||
+            (en == chosenEn && kv.first.size() <= chosen.size() && kv.first < chosen)) {
+            chosen = kv.first;
+        }
+    }
+    if (chosen.empty()) return false;
+
+    const std::vector<uint8_t> &m = macs[chosen];
+    char buf[18];
+    snprintf(buf, sizeof(buf), "%02x:%02x:%02x:%02x:%02x:%02x", m[0], m[1], m[2], m[3], m[4],
+             m[5]);
+    macText = buf;
+    macBytes.assign(m.begin(), m.end());
+    LOGI("network interface: %s (%s)", chosen.c_str(), macText.c_str());
+    return true;
+}
+#else
 bool AirPlayServer::FindMac(std::string &macText, std::vector<char> &macBytes) {
     ULONG buflen = 16 * 1024;
     std::vector<uint8_t> storage(buflen);
@@ -176,6 +232,7 @@ bool AirPlayServer::FindMac(std::string &macText, std::vector<char> &macBytes) {
          macText.c_str());
     return true;
 }
+#endif
 
 bool AirPlayServer::Start(const AirPlayConfig &cfg, AirPlaySink *sink) {
     sink_ = sink;
@@ -184,10 +241,12 @@ bool AirPlayServer::Start(const AirPlayConfig &cfg, AirPlaySink *sink) {
     // libairplay initialises Winsock inside raop_init(), but dnssd_init() runs
     // first and calls gethostname(), which fails without it - leaving the mDNS
     // responder advertising a fallback host name. Start Winsock up front.
+#ifdef _WIN32
     WSADATA wsa{};
     if (WSAStartup(MAKEWORD(2, 2), &wsa) == 0) {
         wsaStarted_ = true;
     }
+#endif
 
     std::string macText;
     std::vector<char> macBytes;
@@ -279,8 +338,12 @@ bool AirPlayServer::Start(const AirPlayConfig &cfg, AirPlaySink *sink) {
         return false;
     }
 
+#ifdef _WIN32
     LOGI("AirPlay receiver \"%s\" listening on port %u (built-in mDNS, no Bonjour)",
          name_.c_str(), (unsigned)port_);
+#else
+    LOGI("AirPlay receiver \"%s\" listening on port %u", name_.c_str(), (unsigned)port_);
+#endif
     return true;
 }
 
@@ -297,9 +360,11 @@ void AirPlayServer::Stop() {
         dnssd_destroy(dnssd_);
         dnssd_ = nullptr;
     }
+#ifdef _WIN32
     if (wsaStarted_) {
         WSACleanup();
         wsaStarted_ = false;
     }
+#endif
     sink_ = nullptr;
 }

@@ -14,13 +14,20 @@
 #include <atomic>
 #include <map>
 #include <mutex>
+#include <vector>
 
+#ifdef _WIN32
 // Posted from libairplay threads to the UI thread.
 #define WM_AM_RELAYOUT (WM_APP + 1)
 #define WM_AM_CLIENT (WM_APP + 2)
+using NativeWindow = HWND;
+#else
+@class NSWindow;
+using NativeWindow = NSWindow *;
+#endif
 
 struct AppOptions {
-    std::string serviceName;              // default: this PC's name
+    std::string serviceName;              // default: this computer's name
     unsigned short adWidth = 1920;        // display size advertised to the client
     unsigned short adHeight = 1080;
     unsigned short adFps = 60;
@@ -39,17 +46,43 @@ struct AppOptions {
     bool uvTest = false;
 };
 
+// Command-line help text, and the parser shared by both platforms' entry
+// points. Returns false on a malformed argument.
+extern const char *const kUsage;
+// Copyright, licence and where to get the source - shown by Cmd::About, as
+// GPLv3 section 5(d) asks of an interactive program.
+extern const char *const kAboutText;
+extern const char *const kSourceUrl;
+bool ParseAppOptions(const std::vector<std::string> &args, AppOptions &opts, bool &showHelp);
+
+// Everything the menus and keyboard can ask for.
+enum class Cmd { Flip, Mute, ZoomIn, ZoomOut, ResetZoom, SwapStream, About, Quit };
+
 class App : public AirPlaySink {
   public:
-    bool Init(HWND hwnd, const AppOptions &opts);
+    bool Init(NativeWindow window, const AppOptions &opts);
     void Shutdown();
 
     // Returns true if it drew this iteration.
     bool Tick();
     bool Animating() const;
-    HANDLE FrameEvent() const { return frameEvent_; }
 
+    void Command(Cmd c);
+    void Zoom(float factor);
+    // The monitor or its DPI changed under the window.
+    void OnDisplayChanged();
+    // Client-area pixel coordinates, top-left origin.
+    bool HitsDevice(int clientX, int clientY) const;
+    void ShowContextMenu(int x, int y);
+    bool Muted() const { return audio_.Muted(); }
+
+#ifdef _WIN32
+    HANDLE FrameEvent() const { return frameEvent_; }
     LRESULT HandleMessage(UINT msg, WPARAM wp, LPARAM lp, bool &handled);
+#else
+    // Tick now, and keep ticking at frame rate for as long as Animating().
+    void RunTick();
+#endif
 
     // ---- AirPlaySink ----
     void OnClientRequest(const std::string &deviceId, const std::string &model,
@@ -82,16 +115,27 @@ class App : public AirPlaySink {
     float TargetAngle() const;
     float WorkAreaLimit() const;
     void ResizeWindow();
-    void SetWindowSizeKeepCenter(int w, int h);
-    bool HitsDevice(int clientX, int clientY) const;
-
-    bool MakeUvTestFrame();
     void UpdateIdleText();
-    void ShowContextMenu(int x, int y);
     float BaseLongEdge() const;
     const Skin *SkinFor(const DeviceProfile &p);
 
-    HWND hwnd_ = nullptr;
+    // ---- platform layer (app.cpp on Windows, app_mac.mm on macOS) ---------
+    bool InitPlatform();
+    void PlatformCommand(Cmd c); // About and Quit
+    // Usable area of the window's monitor, in pixels.
+    void WorkAreaPx(float &w, float &h) const;
+    void SetWindowSizeKeepCenter(int w, int h);
+    // Run OnGeometryChanged / UpdateIdleText on the UI thread.
+    void PostRelayout();
+    void PostClientChanged();
+    // Wake the UI thread: a frame was decoded or the video was dropped.
+    void WakeUi();
+    // A client is connected: keep the OS from throttling us (macOS App Nap).
+    void SetMirroringActive(bool active);
+    std::string DefaultServiceName() const;
+    bool MakeUvTestFrame();
+
+    NativeWindow window_ = nullptr;
     Gpu gpu_;
     Renderer renderer_;
     VideoDecoder decoder_;
@@ -104,8 +148,13 @@ class App : public AirPlaySink {
     // content into a still-portrait panel is what used to look like the screen
     // rotating before the device did.
     VideoFrameRef pending_;
+#ifdef _WIN32
     Com<ID3D11Texture2D> uvTestTex_;
     HANDLE frameEvent_ = nullptr;
+#else
+    std::atomic<bool> tickQueued_{false};
+    bool animArmed_ = false;
+#endif
 
     // Guarded because libairplay threads write them.
     std::mutex stateMutex_;

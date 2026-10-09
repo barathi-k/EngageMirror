@@ -91,14 +91,14 @@ class Renderer {
     // Zero-copy path: two views onto one NV12 surface. The picture is the
     // w x h region at (cropX, cropY) within a texW x texH surface; everything
     // else in there is decoder padding and must never be sampled.
-    void SetVideoNV12(const Com<ID3D11ShaderResourceView> &y,
-                      const Com<ID3D11ShaderResourceView> &uv, int w, int h, int texW,
+    void SetVideoNV12(const TexView &y, const TexView &uv, int w, int h, int texW,
                       int texH, int cropX, int cropY, bool fullRange);
     // Software fallback path.
-    void SetVideoBGRA(const Com<ID3D11ShaderResourceView> &rgba, int w, int h);
+    void SetVideoBGRA(const TexView &rgba, int w, int h);
     void ClearVideo();
 
-    void SetStatusText(const std::wstring &title, const std::wstring &subtitle);
+    // UTF-8.
+    void SetStatusText(const std::string &title, const std::string &subtitle);
 
     void Render();
 
@@ -151,8 +151,9 @@ class Renderer {
         float tint[4];
     };
 
-    void DrawText(const Com<ID3D11ShaderResourceView> &srv, int w, int h, float cx,
-                  float cy, float alpha);
+    // Everything the frame shader needs, for a viewport of vpW x vpH pixels.
+    void FillFrameCB(FrameCB &cb, float vpW, float vpH) const;
+    void DrawText(const TexView &srv, int w, int h, float cx, float cy, float alpha);
 
     Gpu *gpu_ = nullptr;
     DeviceLayout device_;
@@ -160,14 +161,22 @@ class Renderer {
     DeviceProfile profile_;
     const Skin *skin_ = nullptr;
 
+#ifdef _WIN32
     Com<ID3D11VertexShader> vsFull_, vsQuad_;
     Com<ID3D11PixelShader> psFrame_, psText_;
     Com<ID3D11Buffer> cbFrame_, cbQuad_;
     Com<ID3D11SamplerState> sampler_;
     Com<ID3D11BlendState> blendPremul_;
     Com<ID3D11RasterizerState> raster_;
+#else
+    id<MTLRenderPipelineState> pipeFrame_ = nil, pipeText_ = nil;
+    id<MTLSamplerState> sampler_ = nil;
+    id<MTLTexture> dummy_ = nil;                 // bound to unused texture slots
+    id<MTLRenderCommandEncoder> enc_ = nil;      // only valid inside Render()
+    FrameCB lastCB_{};                           // DrawText needs the viewport
+#endif
 
-    Com<ID3D11ShaderResourceView> videoY_, videoUV_, videoRGBA_;
+    TexView videoY_, videoUV_, videoRGBA_;
     int videoW_ = 0, videoH_ = 0;
     int videoTexW_ = 0, videoTexH_ = 0;
     int videoCropX_ = 0, videoCropY_ = 0;
@@ -175,7 +184,7 @@ class Renderer {
     bool videoFullRange_ = false;
     bool hasVideo_ = false;
 
-    Com<ID3D11ShaderResourceView> titleTex_, subTex_;
+    TexView titleTex_, subTex_;
     int titleW_ = 0, titleH_ = 0, subW_ = 0, subH_ = 0;
-    std::wstring titleStr_, subStr_;
+    std::string titleStr_, subStr_;
 };

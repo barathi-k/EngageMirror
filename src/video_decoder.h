@@ -1,10 +1,10 @@
 // AirMirror - H.264/H.265 decoding.
 //
-// Preferred path is FFmpeg + D3D11VA: the decoder writes NV12 straight into a
-// D3D11 texture array that we sample directly in the frame shader, so a
-// mirrored frame never touches system memory. If the driver will not give us
-// decoder textures that are also shader resources we fall back to software
-// decode + BGRA upload.
+// Preferred path is FFmpeg + a hardware decoder that writes NV12 straight into
+// GPU memory we sample directly in the frame shader, so a mirrored frame never
+// touches system memory: D3D11VA texture arrays on Windows, VideoToolbox
+// CVPixelBuffers wrapped as Metal textures on macOS. If that is unavailable we
+// fall back to software decode + BGRA upload.
 #pragma once
 
 #include "common.h"
@@ -17,7 +17,9 @@
 extern "C" {
 #include <libavcodec/avcodec.h>
 #include <libavutil/hwcontext.h>
+#ifdef _WIN32
 #include <libavutil/hwcontext_d3d11va.h>
+#endif
 #include <libswscale/swscale.h>
 }
 
@@ -36,11 +38,12 @@ class VideoFrameRef {
     bool Valid() const { return width > 0 && height > 0; }
 
     AVFrame *frame = nullptr;
-    Com<ID3D11ShaderResourceView> y, uv, rgba;
+    TexView y, uv, rgba;
     int width = 0, height = 0;
-    // Where the picture actually sits inside the surface. D3D11VA rounds decode
-    // surfaces up to a multiple of 16, so an 810x1080 stream lives in an
-    // 816x1088 texture; sampling uv 0..1 drags in the padding, which decodes as
+    // Where the picture actually sits inside the surface. Hardware decoders may
+    // round surfaces up to a multiple of 16 (D3D11VA always does), so an
+    // 810x1080 stream lives in an 816x1088 texture; sampling uv 0..1 drags in
+    // the padding, which decodes as
     // bright green. FFmpeg cannot apply left/top cropping to a hardware surface
     // either, so the picture does not necessarily start at (0,0).
     int texW = 0, texH = 0;
@@ -77,6 +80,8 @@ class VideoDecoder {
     void OnDecodedFrame(AVFrame *f);
     bool MakeNV12Views(AVFrame *f, VideoFrameRef &out);
     bool MakeBGRAView(AVFrame *f, VideoFrameRef &out);
+    // Downloads a hardware frame the zero-copy path could not use.
+    bool MakeBGRAFromHw(AVFrame *f, VideoFrameRef &out);
 
     Gpu *gpu_ = nullptr;
     AVBufferRef *hwDevice_ = nullptr;
@@ -85,6 +90,7 @@ class VideoDecoder {
     AVFrame *scratch_ = nullptr;
     SwsContext *sws_ = nullptr;
     std::vector<uint8_t> bgra_;
+#ifdef _WIN32
     Com<ID3D11Texture2D> bgraTex_;
     Com<ID3D11ShaderResourceView> bgraSrv_;
     int bgraW_ = 0, bgraH_ = 0;
@@ -93,6 +99,7 @@ class VideoDecoder {
         Com<ID3D11ShaderResourceView> y, uv;
     };
     std::map<std::pair<ID3D11Texture2D *, int>, SrvPair> srvCache_;
+#endif
 
     // Guards the AVCodecContext. Decode() runs on the mirror RTP thread while
     // Flush()/SetCodec() can arrive from the RTSP thread.

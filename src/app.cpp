@@ -1,19 +1,98 @@
 #include "app.h"
 
+#ifdef _WIN32
 #include <windowsx.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
+
+const char *const kUsage =
+    "AirMirror - AirPlay screen mirroring receiver\n\n"
+    "  --name <text>     Name shown in the iPhone/iPad AirPlay list\n"
+    "                    (default: this computer's name)\n"
+    "  --size <WxH>      Display size advertised to the client.\n"
+    "                    Default 1920x1080. Use 1440x1080 to ask a 4:3 iPad\n"
+    "                    for a 4:3 stream instead of a 16:9 one.\n"
+    "  --fps <n>         Advertised refresh rate / max FPS (default 60)\n"
+    "  --scale <f>       Starting window scale, 0.3 - 3.0 (default 1.0)\n"
+    "  --h265            Advertise H.265 support (needed for 4K sources)\n"
+    "  --device <model>  Preview a device frame with no client attached,\n"
+    "                    e.g. --device iPad13,4\n"
+    "  --preview <WxH>   Fake stream size for the preview, e.g. 2732x2048\n"
+    "  --uvtest          Self-check: show a synthetic 810x1080 picture inside\n"
+    "                    the padded 816x1088 surface a decoder would allocate.\n"
+    "                    Any green edge means padding is being sampled.\n"
+    "  --help            Show this message\n\n"
+    "In the window: drag to move, wheel to resize, right-click for a menu.\n"
+    "L flips landscape orientation, M mutes, 0 resets size, Esc quits.";
+
+const char *const kSourceUrl = "https://github.com/barathi-k/AirMirror";
+
+const char *const kAboutText =
+    "AirMirror - AirPlay screen mirroring receiver\n"
+    "Copyright (C) AirMirror contributors\n\n"
+    "This program is free software: you can redistribute it and/or modify it "
+    "under the terms of the GNU General Public License, version 3 or later. "
+    "It comes with ABSOLUTELY NO WARRANTY.\n\n"
+    "Built on UxPlay (GPLv3), FFmpeg (LGPL-2.1+), OpenSSL (Apache-2.0), "
+    "libplist (LGPL-2.1+) and llhttp (MIT). Licence texts are included with "
+    "the application.\n\n"
+    "Source code: https://github.com/barathi-k/AirMirror";
+
+bool ParseAppOptions(const std::vector<std::string> &args, AppOptions &opts,
+                     bool &showHelp) {
+    bool ok = true;
+    for (size_t i = 0; i < args.size(); i++) {
+        const std::string &a = args[i];
+        auto next = [&](std::string &out) {
+            if (i + 1 >= args.size()) { ok = false; return false; }
+            out = args[++i];
+            return true;
+        };
+        std::string v;
+        if (a == "--help" || a == "-h" || a == "/?") {
+            showHelp = true;
+        } else if (a == "--name" && next(v)) {
+            opts.serviceName = v;
+        } else if (a == "--size" && next(v)) {
+            int w = 0, h = 0;
+            if (sscanf(v.c_str(), "%dx%d", &w, &h) == 2 && w > 0 && h > 0) {
+                opts.adWidth = (unsigned short)w;
+                opts.adHeight = (unsigned short)h;
+            } else {
+                ok = false;
+            }
+        } else if (a == "--fps" && next(v)) {
+            int f = atoi(v.c_str());
+            if (f > 0 && f < 256) opts.adFps = (unsigned short)f;
+        } else if (a == "--scale" && next(v)) {
+            opts.startScale = (float)atof(v.c_str());
+        } else if (a == "--h265") {
+            opts.allowH265 = true;
+        } else if (a == "--uvtest") {
+            opts.uvTest = true;
+        } else if (a == "--device" && next(v)) {
+            opts.previewModel = v;
+        } else if (a == "--preview" && next(v)) {
+            int w = 0, h = 0;
+            if (sscanf(v.c_str(), "%dx%d", &w, &h) == 2 && w > 0 && h > 0) {
+                opts.previewW = w;
+                opts.previewH = h;
+            } else {
+                ok = false;
+            }
+        } else if (a.rfind("-psn_", 0) == 0) {
+            // Process serial number Finder passes to apps on older macOS.
+        } else if (!a.empty() && a[0] == '-') {
+            ok = false;
+        }
+    }
+    return ok;
+}
 
 namespace {
-enum MenuId {
-    kMenuFlip = 1000,
-    kMenuMute,
-    kMenuZoomIn,
-    kMenuZoomOut,
-    kMenuResetZoom,
-    kMenuQuit,
-};
 
 // Wrap into (-180, 180] so a rotation always takes the short way round.
 float WrapDeg(float d) {
@@ -63,12 +142,11 @@ float SdRoundRect(float px, float py, float hx, float hy, float r) {
 }
 } // namespace
 
-bool App::Init(HWND hwnd, const AppOptions &opts) {
-    hwnd_ = hwnd;
+bool App::Init(NativeWindow window, const AppOptions &opts) {
+    window_ = window;
     userScale_ = Clampf(opts.startScale, 0.3f, 3.0f);
-    frameEvent_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);
 
-    if (!gpu_.Init(hwnd)) return false;
+    if (!InitPlatform()) return false;
     if (!renderer_.Init(&gpu_)) return false;
     if (!decoder_.Init(&gpu_)) return false;
     audio_.Init();
@@ -85,17 +163,8 @@ bool App::Init(HWND hwnd, const AppOptions &opts) {
     cfg.maxFps = opts.adFps;
     cfg.allowH265 = opts.allowH265;
 
-    if (!opts.serviceName.empty()) {
-        cfg.serviceName = opts.serviceName;
-    } else {
-        wchar_t host[MAX_COMPUTERNAME_LENGTH + 1] = {};
-        DWORD hostLen = MAX_COMPUTERNAME_LENGTH + 1;
-        if (GetComputerNameW(host, &hostLen) && hostLen > 0) {
-            cfg.serviceName = Narrow(host);
-        } else {
-            cfg.serviceName = "AirMirror";
-        }
-    }
+    cfg.serviceName = opts.serviceName.empty() ? DefaultServiceName() : opts.serviceName;
+    if (cfg.serviceName.empty()) cfg.serviceName = "AirMirror";
     if (!server_.Start(cfg, this)) {
         LOGE("AirPlay server failed to start");
         return false;
@@ -114,10 +183,12 @@ void App::Shutdown() {
     decoder_.Shutdown();
     renderer_.Shutdown();
     gpu_.Shutdown();
+#ifdef _WIN32
     if (frameEvent_) {
         CloseHandle(frameEvent_);
         frameEvent_ = nullptr;
     }
+#endif
 }
 
 // ---------------------------------------------------------------------------
@@ -136,26 +207,17 @@ const Skin *App::SkinFor(const DeviceProfile &p) {
 }
 
 float App::BaseLongEdge() const {
-    RECT work{0, 0, 1920, 1080};
-    HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi{sizeof(MONITORINFO)};
-    if (GetMonitorInfoW(mon, &mi)) work = mi.rcWork;
-
-    const float workH = (float)(work.bottom - work.top);
+    float workW = 1920.0f, workH = 1080.0f;
+    WorkAreaPx(workW, workH);
     return workH * 0.80f * userScale_;
 }
 
 // Largest square window that still sits on the monitor. Zooming in is allowed
 // to exceed it, otherwise `+` would stop doing anything.
 float App::WorkAreaLimit() const {
-    RECT work{0, 0, 1920, 1080};
-    HMONITOR mon = MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST);
-    MONITORINFO mi{sizeof(MONITORINFO)};
-    if (GetMonitorInfoW(mon, &mi)) work = mi.rcWork;
-
-    const float m = std::min((float)(work.right - work.left),
-                             (float)(work.bottom - work.top));
-    return m * 0.97f * std::max(userScale_, 1.0f);
+    float workW = 1920.0f, workH = 1080.0f;
+    WorkAreaPx(workW, workH);
+    return std::min(workW, workH) * 0.97f * std::max(userScale_, 1.0f);
 }
 
 float App::TargetAngle() const {
@@ -357,32 +419,6 @@ void App::AdoptFrame(VideoFrameRef &&f) {
     }
 }
 
-void App::SetWindowSizeKeepCenter(int w, int h) {
-    if (w <= 0 || h <= 0) return;
-    RECT rc{};
-    GetWindowRect(hwnd_, &rc);
-    const int curW = rc.right - rc.left;
-    const int curH = rc.bottom - rc.top;
-
-    if (curW != w || curH != h) {
-        int x = rc.left + curW / 2 - w / 2;
-        int y = rc.top + curH / 2 - h / 2;
-
-        // The square is a good deal larger than the device, so growing around
-        // the centre can push it off the monitor - nudge it back on.
-        MONITORINFO mi{sizeof(MONITORINFO)};
-        if (GetMonitorInfoW(MonitorFromWindow(hwnd_, MONITOR_DEFAULTTONEAREST), &mi)) {
-            const RECT &wa = mi.rcWork;
-            if (w <= wa.right - wa.left) x = (int)Clampf((float)x, (float)wa.left,
-                                                         (float)(wa.right - w));
-            if (h <= wa.bottom - wa.top) y = (int)Clampf((float)y, (float)wa.top,
-                                                         (float)(wa.bottom - h));
-        }
-        SetWindowPos(hwnd_, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
-    }
-    gpu_.Resize((uint32_t)w, (uint32_t)h);
-}
-
 void App::ResizeWindow() {
     const int side = (int)std::ceil(WindowSideFor(dev_));
     SetWindowSizeKeepCenter(side, side);
@@ -399,59 +435,6 @@ bool App::HitsDevice(int clientX, int clientY) const {
     return SdRoundRect(dx, dy, dev_.bodyHx, dev_.bodyHy, dev_.bodyRadius) <= 1.0f;
 }
 
-// Reproduces the one condition that is hard to catch by eye: a picture whose
-// width is not a multiple of 16, living in the larger surface D3D11VA hands
-// back. The padding is zeroed, which through the BT.709 matrix is bright green.
-bool App::MakeUvTestFrame() {
-    const int w = 810, h = 1080;    // a real portrait iPad mirroring size
-    const int tw = 816, th = 1088;  // what the decoder actually allocates for it
-
-    std::vector<uint8_t> data((size_t)tw * th * 3 / 2, 0); // padding stays zero
-    for (int y = 0; y < h; y++) memset(data.data() + (size_t)y * tw, 235, w);
-    uint8_t *chroma = data.data() + (size_t)tw * th;
-    for (int y = 0; y < h / 2; y++) memset(chroma + (size_t)y * tw, 128, w);
-
-    D3D11_TEXTURE2D_DESC td{};
-    td.Width = (UINT)tw;
-    td.Height = (UINT)th;
-    td.MipLevels = 1;
-    td.ArraySize = 1;
-    td.Format = DXGI_FORMAT_NV12;
-    td.SampleDesc.Count = 1;
-    td.Usage = D3D11_USAGE_IMMUTABLE;
-    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
-
-    D3D11_SUBRESOURCE_DATA sd{};
-    sd.pSysMem = data.data();
-    sd.SysMemPitch = (UINT)tw;
-
-    if (FAILED(gpu_.Device()->CreateTexture2D(&td, &sd, uvTestTex_.put()))) {
-        LOGE("uvtest: NV12 texture creation failed");
-        return false;
-    }
-
-    D3D11_SHADER_RESOURCE_VIEW_DESC vd{};
-    vd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
-    vd.Texture2D.MipLevels = 1;
-    Com<ID3D11ShaderResourceView> y, uv;
-    vd.Format = DXGI_FORMAT_R8_UNORM;
-    if (FAILED(gpu_.Device()->CreateShaderResourceView(uvTestTex_.get(), &vd, y.put())))
-        return false;
-    vd.Format = DXGI_FORMAT_R8G8_UNORM;
-    if (FAILED(gpu_.Device()->CreateShaderResourceView(uvTestTex_.get(), &vd, uv.put())))
-        return false;
-
-    renderer_.SetVideoNV12(y, uv, w, h, tw, th, 0, 0, false);
-    {
-        std::lock_guard<std::mutex> lk(stateMutex_);
-        streamW_ = (float)w;
-        streamH_ = (float)h;
-    }
-    OnGeometryChanged();
-    LOGI("uvtest: %dx%d picture in a %dx%d surface; any green edge is a bug", w, h, tw, th);
-    return true;
-}
-
 void App::UpdateIdleText() {
     std::string name;
     bool conn;
@@ -461,11 +444,9 @@ void App::UpdateIdleText() {
         name = clientName_;
     }
     if (conn) {
-        renderer_.SetStatusText(Widen(name.empty() ? "Connected" : name),
-                                L"Waiting for video…");
+        renderer_.SetStatusText(name.empty() ? "Connected" : name, "Waiting for video…");
     } else {
-        renderer_.SetStatusText(Widen(server_.ServiceName()),
-                                L"Control Centre → Screen Mirroring");
+        renderer_.SetStatusText(server_.ServiceName(), "Control Centre → Screen Mirroring");
     }
 }
 
@@ -475,7 +456,9 @@ void App::UpdateIdleText() {
 bool App::Animating() const {
     // Also true while a shape proposal is outstanding, so the confirmation
     // window is ticked at frame rate rather than at the idle poll interval.
-    return rotating_ || fadeValue_ != fadeTarget_ || wantW_ > 0.0f ||
+    // awaitingFrame_ is here for its timeout: the loop sleeps outright when
+    // nothing is animating, so a timed state must keep it ticking.
+    return rotating_ || fadeValue_ != fadeTarget_ || wantW_ > 0.0f || awaitingFrame_ ||
            NowSeconds() < flipDimUntil_;
 }
 
@@ -592,149 +575,53 @@ bool App::Tick() {
 }
 
 // ---------------------------------------------------------------------------
-// Window messages
+// Commands (menus and keyboard, both platforms)
 // ---------------------------------------------------------------------------
-LRESULT App::HandleMessage(UINT msg, WPARAM wp, LPARAM lp, bool &handled) {
-    handled = true;
-    switch (msg) {
-    case WM_AM_RELAYOUT:
-        OnGeometryChanged();
-        return 0;
-
-    case WM_AM_CLIENT:
-        UpdateIdleText();
-        needsRedraw_ = true;
-        return 0;
-
-    case WM_NCHITTEST: {
-        // The window is a square that fits the device either way up, so it is
-        // always bigger than the chassis; only the chassis catches the mouse.
-        POINT pt{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
-        ScreenToClient(hwnd_, &pt);
-        return HitsDevice(pt.x, pt.y) ? HTCAPTION : HTTRANSPARENT;
-    }
-
-    case WM_RBUTTONUP:
-        ShowContextMenu(GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
-        return 0;
-
-    case WM_COMMAND:
-        switch (LOWORD(wp)) {
-        case kMenuFlip:
-            landscapeFlip_ = !landscapeFlip_;
-            StartRotation(false);
-            needsRedraw_ = true;
-            break;
-        case kMenuMute:
-            audio_.SetMuted(!audio_.Muted());
-            break;
-        case kMenuZoomIn:
-            userScale_ = Clampf(userScale_ * 1.1f, 0.3f, 3.0f);
-            RebuildDevice();
-            RecomputeVideoRect();
-            needsRedraw_ = true;
-            break;
-        case kMenuZoomOut:
-            userScale_ = Clampf(userScale_ / 1.1f, 0.3f, 3.0f);
-            RebuildDevice();
-            RecomputeVideoRect();
-            needsRedraw_ = true;
-            break;
-        case kMenuResetZoom:
-            userScale_ = 1.0f;
-            RebuildDevice();
-            RecomputeVideoRect();
-            needsRedraw_ = true;
-            break;
-        case kMenuQuit:
-            PostMessageW(hwnd_, WM_CLOSE, 0, 0);
-            break;
-        }
-        return 0;
-
-    case WM_MOUSEWHEEL: {
-        const int delta = GET_WHEEL_DELTA_WPARAM(wp);
-        userScale_ = Clampf(userScale_ * (delta > 0 ? 1.08f : 1.0f / 1.08f), 0.3f, 3.0f);
-        RebuildDevice();
-        RecomputeVideoRect();
-        needsRedraw_ = true;
-        return 0;
-    }
-
-    case WM_KEYDOWN:
-        switch (wp) {
-        case 'L':
-            landscapeFlip_ = !landscapeFlip_;
-            StartRotation(false);
-            needsRedraw_ = true;
-            break;
-        case 'M':
-            audio_.SetMuted(!audio_.Muted());
-            break;
-        case 'R': {
-            // Swap the stream's orientation. Mainly a preview aid for checking
-            // the pivot; with a live client the next frame corrects it.
-            std::lock_guard<std::mutex> lk(stateMutex_);
-            std::swap(streamW_, streamH_);
-            PostMessageW(hwnd_, WM_AM_RELAYOUT, 0, 0);
-            break;
-        }
-        case VK_OEM_PLUS:
-        case VK_ADD:
-            userScale_ = Clampf(userScale_ * 1.1f, 0.3f, 3.0f);
-            RebuildDevice();
-            RecomputeVideoRect();
-            needsRedraw_ = true;
-            break;
-        case VK_OEM_MINUS:
-        case VK_SUBTRACT:
-            userScale_ = Clampf(userScale_ / 1.1f, 0.3f, 3.0f);
-            RebuildDevice();
-            RecomputeVideoRect();
-            needsRedraw_ = true;
-            break;
-        case '0':
-            userScale_ = 1.0f;
-            RebuildDevice();
-            RecomputeVideoRect();
-            needsRedraw_ = true;
-            break;
-        case VK_ESCAPE:
-            PostMessageW(hwnd_, WM_CLOSE, 0, 0);
-            break;
-        }
-        return 0;
-
-    case WM_DPICHANGED:
-    case WM_DISPLAYCHANGE:
-        RebuildDevice();
-        RecomputeVideoRect();
-        needsRedraw_ = true;
-        return 0;
-    }
-
-    handled = false;
-    return 0;
+void App::Zoom(float factor) {
+    userScale_ = (factor > 0.0f) ? Clampf(userScale_ * factor, 0.3f, 3.0f) : 1.0f;
+    RebuildDevice();
+    RecomputeVideoRect();
+    needsRedraw_ = true;
 }
 
-void App::ShowContextMenu(int x, int y) {
-    POINT pt{x, y};
-    ClientToScreen(hwnd_, &pt);
+void App::OnDisplayChanged() {
+    RebuildDevice();
+    RecomputeVideoRect();
+    needsRedraw_ = true;
+}
 
-    HMENU menu = CreatePopupMenu();
-    AppendMenuW(menu, MF_STRING, kMenuFlip, L"Flip landscape orientation\tL");
-    AppendMenuW(menu, MF_STRING | (audio_.Muted() ? MF_CHECKED : 0), kMenuMute,
-                L"Mute audio\tM");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kMenuZoomIn, L"Zoom in\t+");
-    AppendMenuW(menu, MF_STRING, kMenuZoomOut, L"Zoom out\t-");
-    AppendMenuW(menu, MF_STRING, kMenuResetZoom, L"Reset size\t0");
-    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kMenuQuit, L"Quit\tEsc");
-
-    SetForegroundWindow(hwnd_);
-    TrackPopupMenu(menu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, hwnd_, nullptr);
-    DestroyMenu(menu);
+void App::Command(Cmd c) {
+    switch (c) {
+    case Cmd::Flip:
+        landscapeFlip_ = !landscapeFlip_;
+        StartRotation(false);
+        needsRedraw_ = true;
+        break;
+    case Cmd::Mute:
+        audio_.SetMuted(!audio_.Muted());
+        break;
+    case Cmd::ZoomIn:
+        Zoom(1.1f);
+        break;
+    case Cmd::ZoomOut:
+        Zoom(1.0f / 1.1f);
+        break;
+    case Cmd::ResetZoom:
+        Zoom(0.0f);
+        break;
+    case Cmd::SwapStream: {
+        // Swap the stream's orientation. Mainly a preview aid for checking
+        // the pivot; with a live client the next frame corrects it.
+        std::lock_guard<std::mutex> lk(stateMutex_);
+        std::swap(streamW_, streamH_);
+        PostRelayout();
+        break;
+    }
+    case Cmd::About:
+    case Cmd::Quit:
+        PlatformCommand(c);
+        break;
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -752,8 +639,8 @@ void App::OnClientRequest(const std::string &deviceId, const std::string &model,
         profile_ = p;
         clientName_ = name.empty() ? p.displayName : name;
     }
-    PostMessageW(hwnd_, WM_AM_RELAYOUT, 0, 0);
-    PostMessageW(hwnd_, WM_AM_CLIENT, 0, 0);
+    PostRelayout();
+    PostClientChanged();
 }
 
 void App::OnConnectionOpened() {
@@ -761,7 +648,9 @@ void App::OnConnectionOpened() {
         std::lock_guard<std::mutex> lk(stateMutex_);
         connected_ = true;
     }
-    PostMessageW(hwnd_, WM_AM_CLIENT, 0, 0);
+    audio_.SetActive(true);
+    SetMirroringActive(true);
+    PostClientChanged();
 }
 
 void App::OnConnectionClosed() {
@@ -771,12 +660,14 @@ void App::OnConnectionClosed() {
     }
     decoder_.Flush();
     audio_.Flush();
+    audio_.SetActive(false);
+    SetMirroringActive(false);
 
     // renderer_ and current_ belong to the UI thread - tearing down the video
     // views from here would race with a Render() in progress.
     clearVideoPending_.store(true);
-    PostMessageW(hwnd_, WM_AM_CLIENT, 0, 0);
-    SetEvent(frameEvent_);
+    PostClientChanged();
+    WakeUi();
 }
 
 bool App::OnVideoCodec(bool h265) { return decoder_.SetCodec(h265); }
@@ -801,18 +692,18 @@ void App::OnVideoSize(float srcW, float srcH, float w, float h) {
     // decoder output.
     if (changed) {
         LOGI("stream geometry now %.0fx%.0f", useW, useH);
-        PostMessageW(hwnd_, WM_AM_RELAYOUT, 0, 0);
+        PostRelayout();
     }
 }
 
 void App::OnVideoData(const uint8_t *data, int len) {
     decoder_.Decode(data, len);
-    SetEvent(frameEvent_);
+    WakeUi();
 }
 
 void App::OnVideoFlush() {
     decoder_.Flush();
-    SetEvent(frameEvent_);
+    WakeUi();
 }
 
 void App::OnVideoPause(bool paused) {
@@ -827,3 +718,220 @@ void App::OnAudioData(const uint8_t *data, int len) { audio_.Submit(data, len); 
 void App::OnAudioFlush() { audio_.Flush(); }
 
 void App::OnVolume(float db) { audio_.SetVolumeDb(db); }
+
+#ifdef _WIN32
+// ---------------------------------------------------------------------------
+// Windows platform layer
+// ---------------------------------------------------------------------------
+namespace {
+enum MenuId {
+    kMenuFlip = 1000,
+    kMenuMute,
+    kMenuZoomIn,
+    kMenuZoomOut,
+    kMenuResetZoom,
+    kMenuAbout,
+    kMenuQuit,
+};
+} // namespace
+
+bool App::InitPlatform() {
+    frameEvent_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);
+    return gpu_.Init(window_);
+}
+
+std::string App::DefaultServiceName() const {
+    wchar_t host[MAX_COMPUTERNAME_LENGTH + 1] = {};
+    DWORD hostLen = MAX_COMPUTERNAME_LENGTH + 1;
+    if (GetComputerNameW(host, &hostLen) && hostLen > 0) return Narrow(host);
+    return std::string();
+}
+
+void App::WorkAreaPx(float &w, float &h) const {
+    MONITORINFO mi{sizeof(MONITORINFO)};
+    if (GetMonitorInfoW(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST), &mi)) {
+        w = (float)(mi.rcWork.right - mi.rcWork.left);
+        h = (float)(mi.rcWork.bottom - mi.rcWork.top);
+    }
+}
+
+void App::SetMirroringActive(bool) {}
+void App::PostRelayout() { PostMessageW(window_, WM_AM_RELAYOUT, 0, 0); }
+void App::PostClientChanged() { PostMessageW(window_, WM_AM_CLIENT, 0, 0); }
+void App::WakeUi() { SetEvent(frameEvent_); }
+
+void App::PlatformCommand(Cmd c) {
+    if (c == Cmd::Quit) {
+        PostMessageW(window_, WM_CLOSE, 0, 0);
+    } else if (c == Cmd::About) {
+        MessageBoxW(window_, Widen(kAboutText).c_str(), L"About AirMirror",
+                    MB_ICONINFORMATION);
+    }
+}
+
+void App::SetWindowSizeKeepCenter(int w, int h) {
+    if (w <= 0 || h <= 0) return;
+    RECT rc{};
+    GetWindowRect(window_, &rc);
+    const int curW = rc.right - rc.left;
+    const int curH = rc.bottom - rc.top;
+
+    if (curW != w || curH != h) {
+        int x = rc.left + curW / 2 - w / 2;
+        int y = rc.top + curH / 2 - h / 2;
+
+        // The square is a good deal larger than the device, so growing around
+        // the centre can push it off the monitor - nudge it back on.
+        MONITORINFO mi{sizeof(MONITORINFO)};
+        if (GetMonitorInfoW(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST), &mi)) {
+            const RECT &wa = mi.rcWork;
+            if (w <= wa.right - wa.left) x = (int)Clampf((float)x, (float)wa.left,
+                                                         (float)(wa.right - w));
+            if (h <= wa.bottom - wa.top) y = (int)Clampf((float)y, (float)wa.top,
+                                                         (float)(wa.bottom - h));
+        }
+        SetWindowPos(window_, nullptr, x, y, w, h, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
+    gpu_.Resize((uint32_t)w, (uint32_t)h);
+}
+
+// Reproduces the one condition that is hard to catch by eye: a picture whose
+// width is not a multiple of 16, living in the larger surface D3D11VA hands
+// back. The padding is zeroed, which through the BT.709 matrix is bright green.
+bool App::MakeUvTestFrame() {
+    const int w = 810, h = 1080;    // a real portrait iPad mirroring size
+    const int tw = 816, th = 1088;  // what the decoder actually allocates for it
+
+    std::vector<uint8_t> data((size_t)tw * th * 3 / 2, 0); // padding stays zero
+    for (int y = 0; y < h; y++) memset(data.data() + (size_t)y * tw, 235, w);
+    uint8_t *chroma = data.data() + (size_t)tw * th;
+    for (int y = 0; y < h / 2; y++) memset(chroma + (size_t)y * tw, 128, w);
+
+    D3D11_TEXTURE2D_DESC td{};
+    td.Width = (UINT)tw;
+    td.Height = (UINT)th;
+    td.MipLevels = 1;
+    td.ArraySize = 1;
+    td.Format = DXGI_FORMAT_NV12;
+    td.SampleDesc.Count = 1;
+    td.Usage = D3D11_USAGE_IMMUTABLE;
+    td.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+
+    D3D11_SUBRESOURCE_DATA sd{};
+    sd.pSysMem = data.data();
+    sd.SysMemPitch = (UINT)tw;
+
+    if (FAILED(gpu_.Device()->CreateTexture2D(&td, &sd, uvTestTex_.put()))) {
+        LOGE("uvtest: NV12 texture creation failed");
+        return false;
+    }
+
+    D3D11_SHADER_RESOURCE_VIEW_DESC vd{};
+    vd.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D;
+    vd.Texture2D.MipLevels = 1;
+    Com<ID3D11ShaderResourceView> y, uv;
+    vd.Format = DXGI_FORMAT_R8_UNORM;
+    if (FAILED(gpu_.Device()->CreateShaderResourceView(uvTestTex_.get(), &vd, y.put())))
+        return false;
+    vd.Format = DXGI_FORMAT_R8G8_UNORM;
+    if (FAILED(gpu_.Device()->CreateShaderResourceView(uvTestTex_.get(), &vd, uv.put())))
+        return false;
+
+    renderer_.SetVideoNV12(y, uv, w, h, tw, th, 0, 0, false);
+    {
+        std::lock_guard<std::mutex> lk(stateMutex_);
+        streamW_ = (float)w;
+        streamH_ = (float)h;
+    }
+    OnGeometryChanged();
+    LOGI("uvtest: %dx%d picture in a %dx%d surface; any green edge is a bug", w, h, tw, th);
+    return true;
+}
+
+LRESULT App::HandleMessage(UINT msg, WPARAM wp, LPARAM lp, bool &handled) {
+    handled = true;
+    switch (msg) {
+    case WM_AM_RELAYOUT:
+        OnGeometryChanged();
+        return 0;
+
+    case WM_AM_CLIENT:
+        UpdateIdleText();
+        needsRedraw_ = true;
+        return 0;
+
+    case WM_NCHITTEST: {
+        // The window is a square that fits the device either way up, so it is
+        // always bigger than the chassis; only the chassis catches the mouse.
+        POINT pt{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
+        ScreenToClient(window_, &pt);
+        return HitsDevice(pt.x, pt.y) ? HTCAPTION : HTTRANSPARENT;
+    }
+
+    case WM_RBUTTONUP:
+        ShowContextMenu(GET_X_LPARAM(lp), GET_Y_LPARAM(lp));
+        return 0;
+
+    case WM_COMMAND:
+        switch (LOWORD(wp)) {
+        case kMenuFlip: Command(Cmd::Flip); break;
+        case kMenuMute: Command(Cmd::Mute); break;
+        case kMenuZoomIn: Command(Cmd::ZoomIn); break;
+        case kMenuZoomOut: Command(Cmd::ZoomOut); break;
+        case kMenuResetZoom: Command(Cmd::ResetZoom); break;
+        case kMenuAbout: Command(Cmd::About); break;
+        case kMenuQuit: Command(Cmd::Quit); break;
+        }
+        return 0;
+
+    case WM_MOUSEWHEEL: {
+        const int delta = GET_WHEEL_DELTA_WPARAM(wp);
+        Zoom(delta > 0 ? 1.08f : 1.0f / 1.08f);
+        return 0;
+    }
+
+    case WM_KEYDOWN:
+        switch (wp) {
+        case 'L': Command(Cmd::Flip); break;
+        case 'M': Command(Cmd::Mute); break;
+        case 'R': Command(Cmd::SwapStream); break;
+        case VK_OEM_PLUS:
+        case VK_ADD: Command(Cmd::ZoomIn); break;
+        case VK_OEM_MINUS:
+        case VK_SUBTRACT: Command(Cmd::ZoomOut); break;
+        case '0': Command(Cmd::ResetZoom); break;
+        case VK_ESCAPE: Command(Cmd::Quit); break;
+        }
+        return 0;
+
+    case WM_DPICHANGED:
+    case WM_DISPLAYCHANGE:
+        OnDisplayChanged();
+        return 0;
+    }
+
+    handled = false;
+    return 0;
+}
+
+void App::ShowContextMenu(int x, int y) {
+    POINT pt{x, y};
+    ClientToScreen(window_, &pt);
+
+    HMENU menu = CreatePopupMenu();
+    AppendMenuW(menu, MF_STRING, kMenuFlip, L"Flip landscape orientation\tL");
+    AppendMenuW(menu, MF_STRING | (audio_.Muted() ? MF_CHECKED : 0), kMenuMute,
+                L"Mute audio\tM");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kMenuZoomIn, L"Zoom in\t+");
+    AppendMenuW(menu, MF_STRING, kMenuZoomOut, L"Zoom out\t-");
+    AppendMenuW(menu, MF_STRING, kMenuResetZoom, L"Reset size\t0");
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(menu, MF_STRING, kMenuAbout, L"About AirMirror");
+    AppendMenuW(menu, MF_STRING, kMenuQuit, L"Quit\tEsc");
+
+    SetForegroundWindow(window_);
+    TrackPopupMenu(menu, TPM_RIGHTBUTTON, pt.x, pt.y, 0, window_, nullptr);
+    DestroyMenu(menu);
+}
+#endif // _WIN32

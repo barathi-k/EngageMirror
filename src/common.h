@@ -1,8 +1,13 @@
 // AirMirror - shared utilities.
 #pragma once
 
+#ifdef _WIN32
 #include <windows.h>
 #include <unknwn.h> // IUnknown: WIN32_LEAN_AND_MEAN keeps it out of windows.h
+#else
+#include <strings.h>
+#define _strnicmp strncasecmp
+#endif
 
 #include <cstdint>
 #include <cstdio>
@@ -23,6 +28,7 @@ void LogLine(const char *level, const char *fmt, ...);
 #define LOGD(...) LogLine("dbg ", __VA_ARGS__)
 #endif
 
+#ifdef _WIN32
 // ---------------------------------------------------------------------------
 // Minimal COM smart pointer (avoids depending on WRL/ATL under MinGW)
 // ---------------------------------------------------------------------------
@@ -71,6 +77,10 @@ struct IMultithreadLite : public IUnknown {
 };
 extern const GUID IID_MultithreadLite;
 
+std::wstring Widen(const std::string &s);
+std::string Narrow(const std::wstring &s);
+#endif // _WIN32
+
 // ---------------------------------------------------------------------------
 // Misc helpers
 // ---------------------------------------------------------------------------
@@ -78,9 +88,6 @@ inline float Clampf(float v, float lo, float hi) {
     return v < lo ? lo : (v > hi ? hi : v);
 }
 inline float Lerpf(float a, float b, float t) { return a + (b - a) * t; }
-
-std::wstring Widen(const std::string &s);
-std::string Narrow(const std::wstring &s);
 
 // Monotonic seconds since process start.
 double NowSeconds();

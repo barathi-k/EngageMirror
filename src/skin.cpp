@@ -1,8 +1,9 @@
 #include "skin.h"
 
-#include <wincodec.h>
-
 #include <vector>
+
+#ifdef _WIN32
+#include <wincodec.h>
 
 // Declared locally so we do not depend on which GUIDs MinGW's libuuid exports.
 static const CLSID kCLSID_WICImagingFactory = {
@@ -12,8 +13,15 @@ static const IID kIID_IWICImagingFactory = {
 static const GUID kWICPixelFormat32bppPBGRA = {
     0x6FDDC324, 0x4E03, 0x4BFE, {0xB1, 0x85, 0x3D, 0x77, 0x76, 0x8D, 0xC9, 0x10}};
 
+#else
+#import <Foundation/Foundation.h>
+#include <ImageIO/ImageIO.h>
+#include <sys/stat.h>
+#endif
+
 namespace {
 
+#ifdef _WIN32
 std::wstring ExeDir() {
     wchar_t path[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, path, MAX_PATH);
@@ -64,6 +72,122 @@ bool DecodePng(const std::wstring &path, std::vector<uint8_t> &pixels, int &w, i
     h = (int)uh;
     return true;
 }
+
+std::string FindSkin(const std::string &name) {
+    const std::wstring file = Widen(name) + L".png";
+    const std::wstring exe = ExeDir();
+    const std::wstring candidates[] = {
+        exe + L"\\assets\\" + file,
+        exe + L"\\" + file,
+        exe + L"\\..\\assets\\" + file,
+        exe + L"\\..\\" + file,
+        L"assets\\" + file,
+        file,
+    };
+    for (const auto &c : candidates) {
+        if (FileExists(c)) return Narrow(c);
+    }
+    return std::string();
+}
+
+bool UploadSkin(Gpu &gpu, const std::vector<uint8_t> &pixels, int w, int h, TexView &srv) {
+    // Full mip chain: the skin is far larger than the window (2290px wide shown
+    // at ~800px), and plain bilinear minification of a fine bezel shimmers.
+    D3D11_TEXTURE2D_DESC td{};
+    td.Width = (UINT)w;
+    td.Height = (UINT)h;
+    td.MipLevels = 0;
+    td.ArraySize = 1;
+    td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+    td.SampleDesc.Count = 1;
+    td.Usage = D3D11_USAGE_DEFAULT;
+    td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
+    td.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
+
+    Com<ID3D11Texture2D> tex;
+    if (FAILED(gpu.Device()->CreateTexture2D(&td, nullptr, tex.put()))) {
+        LOGE("skin: CreateTexture2D failed");
+        return false;
+    }
+    if (FAILED(gpu.Device()->CreateShaderResourceView(tex.get(), nullptr, srv.put()))) {
+        LOGE("skin: CreateShaderResourceView failed");
+        return false;
+    }
+    GpuLock lk(gpu);
+    gpu.Context()->UpdateSubresource(tex.get(), 0, nullptr, pixels.data(), (UINT)w * 4, 0);
+    gpu.Context()->GenerateMips(srv.get());
+    return true;
+}
+#else
+std::string FindSkin(const std::string &name) {
+    const std::string file = name + ".png";
+    std::vector<std::string> candidates;
+    if (NSString *res = [[NSBundle mainBundle] resourcePath]) {
+        candidates.push_back(std::string(res.UTF8String) + "/assets/" + file);
+    }
+    candidates.push_back("assets/" + file);
+    candidates.push_back(file);
+    for (const auto &c : candidates) {
+        struct stat st {};
+        if (stat(c.c_str(), &st) == 0 && S_ISREG(st.st_mode)) return c;
+    }
+    return std::string();
+}
+
+// Decodes to premultiplied BGRA, the same layout the Windows path produces.
+bool DecodePng(const std::string &path, std::vector<uint8_t> &pixels, int &w, int &h) {
+    NSURL *url = [NSURL fileURLWithPath:[NSString stringWithUTF8String:path.c_str()]];
+    CGImageSourceRef src = CGImageSourceCreateWithURL((__bridge CFURLRef)url, nullptr);
+    if (!src) return false;
+    CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
+    CFRelease(src);
+    if (!img) return false;
+
+    w = (int)CGImageGetWidth(img);
+    h = (int)CGImageGetHeight(img);
+    pixels.assign((size_t)w * h * 4, 0);
+    CGColorSpaceRef cs = CGColorSpaceCreateWithName(kCGColorSpaceSRGB);
+    CGContextRef ctx = CGBitmapContextCreate(
+        pixels.data(), (size_t)w, (size_t)h, 8, (size_t)w * 4, cs,
+        kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+    CGColorSpaceRelease(cs);
+    if (ctx) {
+        CGContextDrawImage(ctx, CGRectMake(0, 0, w, h), img);
+        CGContextRelease(ctx);
+    }
+    CGImageRelease(img);
+    return ctx != nullptr && w > 0 && h > 0;
+}
+
+bool UploadSkin(Gpu &gpu, const std::vector<uint8_t> &pixels, int w, int h, TexView &srv) {
+    // Full mip chain: the skin is far larger than the window, and plain
+    // bilinear minification of a fine bezel shimmers.
+    MTLTextureDescriptor *td =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                           width:(NSUInteger)w
+                                                          height:(NSUInteger)h
+                                                       mipmapped:YES];
+    td.usage = MTLTextureUsageShaderRead;
+    td.storageMode = MTLStorageModeShared;
+    id<MTLTexture> tex = [gpu.Device() newTextureWithDescriptor:td];
+    if (!tex) {
+        LOGE("skin: texture creation failed");
+        return false;
+    }
+    [tex replaceRegion:MTLRegionMake2D(0, 0, (NSUInteger)w, (NSUInteger)h)
+           mipmapLevel:0
+             withBytes:pixels.data()
+           bytesPerRow:(NSUInteger)w * 4];
+    id<MTLCommandBuffer> cb = [gpu.Queue() commandBuffer];
+    id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
+    [blit generateMipmapsForTexture:tex];
+    [blit endEncoding];
+    [cb commit];
+    [cb waitUntilCompleted];
+    srv.tex = tex;
+    return true;
+}
+#endif
 
 // Finds the opaque body extent and the transparent hole inside it. A pixel
 // counts as "interior" when the body wraps it on all four sides, which
@@ -119,65 +243,28 @@ bool LoadSkin(Gpu &gpu, const std::string &name, Skin &out) {
     out = Skin();
     out.name = name;
 
-    const std::wstring file = Widen(name) + L".png";
-    const std::wstring exe = ExeDir();
-    const std::wstring candidates[] = {
-        exe + L"\\assets\\" + file,
-        exe + L"\\" + file,
-        exe + L"\\..\\assets\\" + file,
-        exe + L"\\..\\" + file,
-        L"assets\\" + file,
-        file,
-    };
-
-    std::wstring path;
-    for (const auto &c : candidates) {
-        if (FileExists(c)) { path = c; break; }
-    }
+    const std::string path = FindSkin(name);
     if (path.empty()) {
-        LOGW("skin: %s.png not found (looked in assets\\ next to the exe)", name.c_str());
+        LOGW("skin: %s.png not found (looked in the assets folder)", name.c_str());
         return false;
     }
 
     std::vector<uint8_t> pixels;
     int w = 0, h = 0;
-    if (!DecodePng(path, pixels, w, h)) {
-        LOGE("skin: failed to decode %ls", path.c_str());
+#ifdef _WIN32
+    const bool decoded = DecodePng(Widen(path), pixels, w, h);
+#else
+    const bool decoded = DecodePng(path, pixels, w, h);
+#endif
+    if (!decoded) {
+        LOGE("skin: failed to decode %s", path.c_str());
         return false;
     }
     if (!Analyse(pixels, w, h, out)) {
         LOGE("skin: %s.png has no transparent screen area", name.c_str());
         return false;
     }
-
-    // Full mip chain: the skin is far larger than the window (2290px wide shown
-    // at ~800px), and plain bilinear minification of a fine bezel shimmers.
-    D3D11_TEXTURE2D_DESC td{};
-    td.Width = (UINT)w;
-    td.Height = (UINT)h;
-    td.MipLevels = 0;
-    td.ArraySize = 1;
-    td.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
-    td.SampleDesc.Count = 1;
-    td.Usage = D3D11_USAGE_DEFAULT;
-    td.BindFlags = D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET;
-    td.MiscFlags = D3D11_RESOURCE_MISC_GENERATE_MIPS;
-
-    Com<ID3D11Texture2D> tex;
-    if (FAILED(gpu.Device()->CreateTexture2D(&td, nullptr, tex.put()))) {
-        LOGE("skin: CreateTexture2D failed");
-        return false;
-    }
-    if (FAILED(gpu.Device()->CreateShaderResourceView(tex.get(), nullptr, out.srv.put()))) {
-        LOGE("skin: CreateShaderResourceView failed");
-        return false;
-    }
-    {
-        GpuLock lk(gpu);
-        gpu.Context()->UpdateSubresource(tex.get(), 0, nullptr, pixels.data(),
-                                         (UINT)w * 4, 0);
-        gpu.Context()->GenerateMips(out.srv.get());
-    }
+    if (!UploadSkin(gpu, pixels, w, h, out.srv)) return false;
 
     out.valid = true;
     LOGI("skin: %s.png %dx%d  body %dx%d  screen %dx%d (%.4f) at (%d,%d)  radius %.0f",

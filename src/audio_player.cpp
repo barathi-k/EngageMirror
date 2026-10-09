@@ -1,13 +1,16 @@
 #include "audio_player.h"
 
+#ifdef _WIN32
 #include <mmdeviceapi.h>
 #include <audioclient.h>
 #include <avrt.h>
 #include <process.h>
+#endif
 
 #include <algorithm>
 #include <cmath>
 
+#ifdef _WIN32
 // Declared locally so the build does not depend on which GUIDs a given MinGW
 // libuuid happens to export.
 static const CLSID kCLSID_MMDeviceEnumerator = {
@@ -21,6 +24,7 @@ static const IID kIID_IAudioRenderClient = {
 // KSDATAFORMAT_SUBTYPE_IEEE_FLOAT is declared but not exported by MinGW's libs.
 static const GUID kSubtypeIeeeFloat = {
     0x00000003, 0x0000, 0x0010, {0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71}};
+#endif
 
 // AirPlay codec configuration (matches what the client negotiates in RTSP).
 // ALAC magic cookie: 44100/16/2, 352 samples per frame.
@@ -44,6 +48,7 @@ bool AudioPlayer::Init() {
         return true; // video mirroring should still work
     }
 
+#ifdef _WIN32
     running_.store(true);
     thread_ = (HANDLE)_beginthreadex(nullptr, 0, ThreadProc, this, 0, nullptr);
     if (!thread_) {
@@ -51,9 +56,11 @@ bool AudioPlayer::Init() {
         return true;
     }
     SetThreadPriority(thread_, THREAD_PRIORITY_TIME_CRITICAL);
+#endif
     return true;
 }
 
+#ifdef _WIN32
 bool AudioPlayer::OpenDevice() {
     HRESULT hr = CoCreateInstance(kCLSID_MMDeviceEnumerator, nullptr, CLSCTX_ALL,
                                   kIID_IMMDeviceEnumerator, (void **)&enumerator_);
@@ -101,10 +108,19 @@ bool AudioPlayer::OpenDevice() {
     event_ = CreateEventW(nullptr, FALSE, FALSE, nullptr);
     if (!event_ || FAILED(client_->SetEventHandle(event_))) return false;
     if (FAILED(client_->GetService(kIID_IAudioRenderClient, (void **)&render_))) return false;
-    if (FAILED(client_->Start())) return false;
 
+    // Started by SetActive() when a client connects.
     LOGI("audio: WASAPI ready (%u frame buffer)", bufferFrames_);
     return true;
+}
+
+void AudioPlayer::SetActive(bool active) {
+    if (!client_) return;
+    if (active) {
+        client_->Start();
+    } else {
+        client_->Stop();
+    }
 }
 
 void AudioPlayer::CloseDevice() {
@@ -116,7 +132,72 @@ void AudioPlayer::CloseDevice() {
     if (event_) { CloseHandle(event_); event_ = nullptr; }
 }
 
+#else // macOS: the default-output AudioUnit pulls from the ring buffer
+bool AudioPlayer::OpenDevice() {
+    AudioComponentDescription desc{};
+    desc.componentType = kAudioUnitType_Output;
+    desc.componentSubType = kAudioUnitSubType_DefaultOutput;
+    desc.componentManufacturer = kAudioUnitManufacturer_Apple;
+    AudioComponent comp = AudioComponentFindNext(nullptr, &desc);
+    if (!comp || AudioComponentInstanceNew(comp, &unit_) != noErr) return false;
+
+    // 44.1 kHz stereo float in; the unit converts to whatever the device runs.
+    AudioStreamBasicDescription fmt{};
+    fmt.mSampleRate = kRate;
+    fmt.mFormatID = kAudioFormatLinearPCM;
+    fmt.mFormatFlags = kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked;
+    fmt.mChannelsPerFrame = kChannels;
+    fmt.mBitsPerChannel = 32;
+    fmt.mBytesPerFrame = kChannels * 4;
+    fmt.mFramesPerPacket = 1;
+    fmt.mBytesPerPacket = fmt.mBytesPerFrame;
+
+    AURenderCallbackStruct cb{RenderCb, this};
+    if (AudioUnitSetProperty(unit_, kAudioUnitProperty_StreamFormat, kAudioUnitScope_Input,
+                             0, &fmt, sizeof(fmt)) != noErr ||
+        AudioUnitSetProperty(unit_, kAudioUnitProperty_SetRenderCallback,
+                             kAudioUnitScope_Input, 0, &cb, sizeof(cb)) != noErr ||
+        AudioUnitInitialize(unit_) != noErr) {
+        CloseDevice();
+        return false;
+    }
+    LOGI("audio: Core Audio output ready");
+    return true;
+}
+
+void AudioPlayer::CloseDevice() {
+    if (!unit_) return;
+    AudioOutputUnitStop(unit_);
+    AudioUnitUninitialize(unit_);
+    AudioComponentInstanceDispose(unit_);
+    unit_ = nullptr;
+}
+
+void AudioPlayer::SetActive(bool active) {
+    if (!unit_) return;
+    if (active) {
+        AudioOutputUnitStart(unit_);
+    } else {
+        AudioOutputUnitStop(unit_);
+    }
+}
+
+OSStatus AudioPlayer::RenderCb(void *self, AudioUnitRenderActionFlags *flags,
+                               const AudioTimeStamp *, UInt32, UInt32 frames,
+                               AudioBufferList *data) {
+    auto *dst = (float *)data->mBuffers[0].mData;
+    const int got = ((AudioPlayer *)self)->PopSamples(dst, (int)frames);
+    if (got < (int)frames) {
+        memset(dst + (size_t)got * kChannels, 0,
+               (size_t)(frames - got) * kChannels * sizeof(float));
+    }
+    if (got == 0) *flags |= kAudioUnitRenderAction_OutputIsSilence;
+    return noErr;
+}
+#endif
+
 void AudioPlayer::Shutdown() {
+#ifdef _WIN32
     running_.store(false);
     if (event_) SetEvent(event_);
     if (thread_) {
@@ -124,12 +205,14 @@ void AudioPlayer::Shutdown() {
         CloseHandle(thread_);
         thread_ = nullptr;
     }
+#endif
     CloseDevice();
     CloseCodec();
     if (frame_) av_frame_free(&frame_);
     if (packet_) av_packet_free(&packet_);
 }
 
+#ifdef _WIN32
 unsigned __stdcall AudioPlayer::ThreadProc(void *self) {
     ((AudioPlayer *)self)->RenderLoop();
     return 0;
@@ -139,8 +222,11 @@ void AudioPlayer::RenderLoop() {
     DWORD taskIndex = 0;
     HANDLE task = AvSetMmThreadCharacteristicsW(L"Pro Audio", &taskIndex);
 
+    // A stopped client never signals, so this sleeps until SetActive(true) or
+    // Shutdown() - no polling while nothing is connected.
     while (running_.load()) {
-        if (WaitForSingleObject(event_, 200) != WAIT_OBJECT_0) continue;
+        if (WaitForSingleObject(event_, INFINITE) != WAIT_OBJECT_0) continue;
+        if (!running_.load()) break;
 
         UINT32 padding = 0;
         if (FAILED(client_->GetCurrentPadding(&padding))) continue;
@@ -163,6 +249,7 @@ void AudioPlayer::RenderLoop() {
 
     if (task) AvRevertMmThreadCharacteristics(task);
 }
+#endif
 
 void AudioPlayer::PushSamples(const float *src, int frames) {
     if (frames <= 0) return;

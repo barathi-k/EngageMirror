@@ -1,0 +1,28 @@
+AirMirror is free software, licensed under the GNU General Public License
+version 3 or later (AirMirror-GPL-3.0.txt). The complete corresponding source,
+including the build scripts and the exact third-party source archives used for
+this build, is available at:
+
+    https://github.com/barathi-k/AirMirror
+
+This application contains the following third-party software:
+
+  UxPlay 1.74 (libairplay, playfair)   GPL-3.0     UxPlay-GPL-3.0.txt,
+                                                   playfair-GPL-3.0.md
+    https://github.com/FDH2/UxPlay  (modified; see patches/ in the source)
+  llhttp                               MIT         llhttp-MIT.txt
+  FFmpeg 7.1.1 (libavcodec, libavutil, LGPL-2.1+  FFmpeg-LGPL-2.1.txt
+    libswresample, libswscale)
+    https://ffmpeg.org - configured without --enable-gpl; the configure
+    line is in scripts/build-deps-macos.sh
+  OpenSSL 3.6.5 (libcrypto)            Apache-2.0  OpenSSL-Apache-2.0.txt
+    https://www.openssl.org
+  libplist 2.8.0                       LGPL-2.1+   libplist-LGPL-2.1.txt
+    https://github.com/libimobiledevice/libplist
+
+The LGPL libraries are linked statically. You may relink AirMirror against
+modified versions of them using the source and build scripts at the address
+above.
+
+AirPlay, iPhone, iPad and Mac are trademarks of Apple Inc. AirMirror is not
+affiliated with or endorsed by Apple.

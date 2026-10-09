@@ -3,8 +3,9 @@
 #include <algorithm>
 #include <cmath>
 
+#ifdef _WIN32
 // ---------------------------------------------------------------------------
-// Shaders
+// Shaders (the Metal port of these lives in renderer_mac.mm)
 // ---------------------------------------------------------------------------
 static const char *kShaderSrc = R"HLSL(
 cbuffer Frame : register(b0)
@@ -272,6 +273,7 @@ float4 PSText(VSOut i) : SV_Target
     return texRGBA.Sample(samp, i.uv) * quadTint;
 }
 )HLSL";
+#endif // _WIN32
 
 // ---------------------------------------------------------------------------
 // Layout
@@ -432,71 +434,9 @@ RectF FitVideo(const RectF &panel, float streamW, float streamH) {
 }
 
 // ---------------------------------------------------------------------------
-// Renderer
+// Renderer - shared state handling
 // ---------------------------------------------------------------------------
-bool Renderer::Init(Gpu *gpu) {
-    gpu_ = gpu;
-
-    if (!gpu_->CompileVS(kShaderSrc, "VSFull", vsFull_)) return false;
-    if (!gpu_->CompileVS(kShaderSrc, "VSQuad", vsQuad_)) return false;
-    if (!gpu_->CompilePS(kShaderSrc, "PSFrame", psFrame_)) return false;
-    if (!gpu_->CompilePS(kShaderSrc, "PSText", psText_)) return false;
-
-    D3D11_BUFFER_DESC bd{};
-    bd.Usage = D3D11_USAGE_DYNAMIC;
-    bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
-    bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
-
-    bd.ByteWidth = sizeof(FrameCB);
-    if (FAILED(gpu_->Device()->CreateBuffer(&bd, nullptr, cbFrame_.put()))) return false;
-    bd.ByteWidth = sizeof(QuadCB);
-    if (FAILED(gpu_->Device()->CreateBuffer(&bd, nullptr, cbQuad_.put()))) return false;
-
-    D3D11_SAMPLER_DESC sd{};
-    sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
-    sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
-    sd.MaxLOD = D3D11_FLOAT32_MAX;
-    if (FAILED(gpu_->Device()->CreateSamplerState(&sd, sampler_.put()))) return false;
-
-    D3D11_BLEND_DESC bl{};
-    bl.RenderTarget[0].BlendEnable = TRUE;
-    bl.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE; // colours are premultiplied
-    bl.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
-    bl.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
-    bl.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
-    bl.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
-    bl.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
-    bl.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
-    if (FAILED(gpu_->Device()->CreateBlendState(&bl, blendPremul_.put()))) return false;
-
-    D3D11_RASTERIZER_DESC rd{};
-    rd.FillMode = D3D11_FILL_SOLID;
-    rd.CullMode = D3D11_CULL_NONE;
-    rd.DepthClipEnable = TRUE;
-    if (FAILED(gpu_->Device()->CreateRasterizerState(&rd, raster_.put()))) return false;
-
-    return true;
-}
-
-void Renderer::Shutdown() {
-    videoY_.reset();
-    videoUV_.reset();
-    videoRGBA_.reset();
-    titleTex_.reset();
-    subTex_.reset();
-    vsFull_.reset();
-    vsQuad_.reset();
-    psFrame_.reset();
-    psText_.reset();
-    cbFrame_.reset();
-    cbQuad_.reset();
-    sampler_.reset();
-    blendPremul_.reset();
-    raster_.reset();
-}
-
-void Renderer::SetVideoNV12(const Com<ID3D11ShaderResourceView> &y,
-                            const Com<ID3D11ShaderResourceView> &uv, int w, int h, int texW,
+void Renderer::SetVideoNV12(const TexView &y, const TexView &uv, int w, int h, int texW,
                             int texH, int cropX, int cropY, bool fullRange) {
     videoY_ = y;
     videoUV_ = uv;
@@ -512,7 +452,7 @@ void Renderer::SetVideoNV12(const Com<ID3D11ShaderResourceView> &y,
     hasVideo_ = (w > 0 && h > 0);
 }
 
-void Renderer::SetVideoBGRA(const Com<ID3D11ShaderResourceView> &rgba, int w, int h) {
+void Renderer::SetVideoBGRA(const TexView &rgba, int w, int h) {
     videoRGBA_ = rgba;
     videoY_.reset();
     videoUV_.reset();
@@ -534,7 +474,7 @@ void Renderer::ClearVideo() {
     videoW_ = videoH_ = 0;
 }
 
-void Renderer::SetStatusText(const std::wstring &title, const std::wstring &subtitle) {
+void Renderer::SetStatusText(const std::string &title, const std::string &subtitle) {
     if (title != titleStr_) {
         titleStr_ = title;
         titleTex_.reset();
@@ -547,58 +487,13 @@ void Renderer::SetStatusText(const std::wstring &title, const std::wstring &subt
     }
 }
 
-void Renderer::DrawText(const Com<ID3D11ShaderResourceView> &srv, int w, int h, float cx,
-                        float cy, float alpha) {
-    if (!srv || alpha <= 0.01f) return;
-    auto *ctx = gpu_->Context();
-
-    QuadCB q{};
-    q.rect[0] = cx - w * 0.5f;
-    q.rect[1] = cy - h * 0.5f;
-    q.rect[2] = (float)w;
-    q.rect[3] = (float)h;
-    q.tint[0] = q.tint[1] = q.tint[2] = q.tint[3] = alpha;
-
-    D3D11_MAPPED_SUBRESOURCE m{};
-    if (FAILED(ctx->Map(cbQuad_.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) return;
-    memcpy(m.pData, &q, sizeof(q));
-    ctx->Unmap(cbQuad_.get(), 0);
-
-    ID3D11ShaderResourceView *views[3] = {nullptr, nullptr, srv.get()};
-    ctx->PSSetShaderResources(0, 3, views);
-    ctx->VSSetShader(vsQuad_.get(), nullptr, 0);
-    ctx->PSSetShader(psText_.get(), nullptr, 0);
-    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
-    ctx->Draw(4, 0);
-}
-
-void Renderer::Render() {
-    if (!gpu_ || !gpu_->BackBufferRTV()) return;
-
-    GpuLock lk(*gpu_);
-    auto *ctx = gpu_->Context();
-
-    ID3D11RenderTargetView *rtv = gpu_->BackBufferRTV();
-    const float clear[4] = {0, 0, 0, 0};
-    ctx->ClearRenderTargetView(rtv, clear);
-    ctx->OMSetRenderTargets(1, &rtv, nullptr);
-
-    D3D11_VIEWPORT vp{};
-    vp.Width = (float)gpu_->Width();
-    vp.Height = (float)gpu_->Height();
-    vp.MaxDepth = 1.0f;
-    ctx->RSSetViewports(1, &vp);
-    ctx->RSSetState(raster_.get());
-
-    const float blendFactor[4] = {0, 0, 0, 0};
-    ctx->OMSetBlendState(blendPremul_.get(), blendFactor, 0xFFFFFFFF);
-
+void Renderer::FillFrameCB(FrameCB &cb, float vpW, float vpH) const {
     const bool skinned = device_.useSkin && skin_ && skin_->valid;
     const float rad = frame_.angleDeg * 3.14159265358979f / 180.0f;
 
-    FrameCB cb{};
-    cb.viewport[0] = vp.Width;
-    cb.viewport[1] = vp.Height;
+    cb = FrameCB{};
+    cb.viewport[0] = vpW;
+    cb.viewport[1] = vpH;
     cb.deviceCenter[0] = frame_.centerX;
     cb.deviceCenter[1] = frame_.centerY;
     cb.bodyHalf[0] = device_.bodyHx;
@@ -674,6 +569,122 @@ void Renderer::Render() {
     };
     argb(profile_.bodyColor, cb.bodyColor);
     argb(profile_.railColor, cb.railColor);
+}
+
+#ifdef _WIN32
+// ---------------------------------------------------------------------------
+// Renderer - Direct3D 11
+// ---------------------------------------------------------------------------
+bool Renderer::Init(Gpu *gpu) {
+    gpu_ = gpu;
+
+    if (!gpu_->CompileVS(kShaderSrc, "VSFull", vsFull_)) return false;
+    if (!gpu_->CompileVS(kShaderSrc, "VSQuad", vsQuad_)) return false;
+    if (!gpu_->CompilePS(kShaderSrc, "PSFrame", psFrame_)) return false;
+    if (!gpu_->CompilePS(kShaderSrc, "PSText", psText_)) return false;
+
+    D3D11_BUFFER_DESC bd{};
+    bd.Usage = D3D11_USAGE_DYNAMIC;
+    bd.BindFlags = D3D11_BIND_CONSTANT_BUFFER;
+    bd.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE;
+
+    bd.ByteWidth = sizeof(FrameCB);
+    if (FAILED(gpu_->Device()->CreateBuffer(&bd, nullptr, cbFrame_.put()))) return false;
+    bd.ByteWidth = sizeof(QuadCB);
+    if (FAILED(gpu_->Device()->CreateBuffer(&bd, nullptr, cbQuad_.put()))) return false;
+
+    D3D11_SAMPLER_DESC sd{};
+    sd.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR;
+    sd.AddressU = sd.AddressV = sd.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+    sd.MaxLOD = D3D11_FLOAT32_MAX;
+    if (FAILED(gpu_->Device()->CreateSamplerState(&sd, sampler_.put()))) return false;
+
+    D3D11_BLEND_DESC bl{};
+    bl.RenderTarget[0].BlendEnable = TRUE;
+    bl.RenderTarget[0].SrcBlend = D3D11_BLEND_ONE; // colours are premultiplied
+    bl.RenderTarget[0].DestBlend = D3D11_BLEND_INV_SRC_ALPHA;
+    bl.RenderTarget[0].BlendOp = D3D11_BLEND_OP_ADD;
+    bl.RenderTarget[0].SrcBlendAlpha = D3D11_BLEND_ONE;
+    bl.RenderTarget[0].DestBlendAlpha = D3D11_BLEND_INV_SRC_ALPHA;
+    bl.RenderTarget[0].BlendOpAlpha = D3D11_BLEND_OP_ADD;
+    bl.RenderTarget[0].RenderTargetWriteMask = D3D11_COLOR_WRITE_ENABLE_ALL;
+    if (FAILED(gpu_->Device()->CreateBlendState(&bl, blendPremul_.put()))) return false;
+
+    D3D11_RASTERIZER_DESC rd{};
+    rd.FillMode = D3D11_FILL_SOLID;
+    rd.CullMode = D3D11_CULL_NONE;
+    rd.DepthClipEnable = TRUE;
+    if (FAILED(gpu_->Device()->CreateRasterizerState(&rd, raster_.put()))) return false;
+
+    return true;
+}
+
+void Renderer::Shutdown() {
+    videoY_.reset();
+    videoUV_.reset();
+    videoRGBA_.reset();
+    titleTex_.reset();
+    subTex_.reset();
+    vsFull_.reset();
+    vsQuad_.reset();
+    psFrame_.reset();
+    psText_.reset();
+    cbFrame_.reset();
+    cbQuad_.reset();
+    sampler_.reset();
+    blendPremul_.reset();
+    raster_.reset();
+}
+
+void Renderer::DrawText(const TexView &srv, int w, int h, float cx, float cy,
+                        float alpha) {
+    if (!srv || alpha <= 0.01f) return;
+    auto *ctx = gpu_->Context();
+
+    QuadCB q{};
+    q.rect[0] = cx - w * 0.5f;
+    q.rect[1] = cy - h * 0.5f;
+    q.rect[2] = (float)w;
+    q.rect[3] = (float)h;
+    q.tint[0] = q.tint[1] = q.tint[2] = q.tint[3] = alpha;
+
+    D3D11_MAPPED_SUBRESOURCE m{};
+    if (FAILED(ctx->Map(cbQuad_.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) return;
+    memcpy(m.pData, &q, sizeof(q));
+    ctx->Unmap(cbQuad_.get(), 0);
+
+    ID3D11ShaderResourceView *views[3] = {nullptr, nullptr, srv.get()};
+    ctx->PSSetShaderResources(0, 3, views);
+    ctx->VSSetShader(vsQuad_.get(), nullptr, 0);
+    ctx->PSSetShader(psText_.get(), nullptr, 0);
+    ctx->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+    ctx->Draw(4, 0);
+}
+
+void Renderer::Render() {
+    if (!gpu_ || !gpu_->BackBufferRTV()) return;
+
+    GpuLock lk(*gpu_);
+    auto *ctx = gpu_->Context();
+
+    ID3D11RenderTargetView *rtv = gpu_->BackBufferRTV();
+    const float clear[4] = {0, 0, 0, 0};
+    ctx->ClearRenderTargetView(rtv, clear);
+    ctx->OMSetRenderTargets(1, &rtv, nullptr);
+
+    D3D11_VIEWPORT vp{};
+    vp.Width = (float)gpu_->Width();
+    vp.Height = (float)gpu_->Height();
+    vp.MaxDepth = 1.0f;
+    ctx->RSSetViewports(1, &vp);
+    ctx->RSSetState(raster_.get());
+
+    const float blendFactor[4] = {0, 0, 0, 0};
+    ctx->OMSetBlendState(blendPremul_.get(), blendFactor, 0xFFFFFFFF);
+
+    const bool skinned = device_.useSkin && skin_ && skin_->valid;
+    FrameCB cb;
+    FillFrameCB(cb, vp.Width, vp.Height);
 
     D3D11_MAPPED_SUBRESOURCE m{};
     if (SUCCEEDED(ctx->Map(cbFrame_.get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &m))) {
@@ -711,3 +722,4 @@ void Renderer::Render() {
     ID3D11ShaderResourceView *nullViews[4] = {nullptr, nullptr, nullptr, nullptr};
     ctx->PSSetShaderResources(0, 4, nullViews);
 }
+#endif // _WIN32

@@ -1,7 +1,8 @@
 // AirMirror - thin wrapper over UxPlay's libairplay.
 //
-// Service discovery uses UxPlay's built-in mDNS responder (lib/mdnsd), so the
-// machine does NOT need Apple's Bonjour / mDNSResponder service installed.
+// Service discovery: on Windows, UxPlay's built-in mDNS responder (lib/mdnsd),
+// so the machine does NOT need Apple's Bonjour service installed. On macOS,
+// the system's own mDNSResponder through UxPlay's dns_sd backend.
 #pragma once
 
 #include "common.h"

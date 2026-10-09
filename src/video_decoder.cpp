@@ -8,7 +8,21 @@ extern "C" {
 #include <libavutil/pixdesc.h>
 }
 
+#ifdef __APPLE__
+#include <CoreVideo/CoreVideo.h>
+#endif
+
 namespace {
+
+#ifdef _WIN32
+constexpr AVHWDeviceType kHwDevice = AV_HWDEVICE_TYPE_D3D11VA;
+constexpr AVPixelFormat kHwPixFmt = AV_PIX_FMT_D3D11;
+constexpr const char *kHwName = "D3D11VA";
+#else
+constexpr AVHWDeviceType kHwDevice = AV_HWDEVICE_TYPE_VIDEOTOOLBOX;
+constexpr AVPixelFormat kHwPixFmt = AV_PIX_FMT_VIDEOTOOLBOX;
+constexpr const char *kHwName = "VideoToolbox";
+#endif
 
 // FFmpeg is chatty when a stream hiccups; fold repeats so one bad packet
 // cannot bury the log.
@@ -86,8 +100,13 @@ void VideoFrameRef::Reset() {
 // AVFrame reference cannot be copied. Adding a field and forgetting them is
 // silent: it arrives at the renderer as zero. This trips if the layout changes
 // so that both get revisited - check them, then update the number.
+#ifdef _WIN32
 static_assert(sizeof(VideoFrameRef) == 72,
               "VideoFrameRef gained or lost a member: update operator=() and Reset()");
+#else
+static_assert(sizeof(VideoFrameRef) == 96,
+              "VideoFrameRef gained or lost a member: update operator=() and Reset()");
+#endif
 
 // ---------------------------------------------------------------------------
 // VideoDecoder
@@ -101,7 +120,17 @@ bool VideoDecoder::Init(Gpu *gpu) {
     scratch_ = av_frame_alloc();
     if (!packet_ || !scratch_) return false;
 
-    hwDevice_ = av_hwdevice_ctx_alloc(AV_HWDEVICE_TYPE_D3D11VA);
+#ifdef __APPLE__
+    // VideoToolbox needs no device handle from us: its surfaces are
+    // CVPixelBuffers that the renderer wraps as Metal textures.
+    int vtErr = av_hwdevice_ctx_create(&hwDevice_, kHwDevice, nullptr, nullptr, 0);
+    if (vtErr < 0) {
+        LOGW("VideoToolbox unavailable; software decoding only");
+        hwDevice_ = nullptr;
+    }
+    return true;
+#else
+    hwDevice_ = av_hwdevice_ctx_alloc(kHwDevice);
     if (!hwDevice_) {
         LOGW("D3D11VA hwdevice allocation failed; software decoding only");
         return true;
@@ -119,6 +148,7 @@ bool VideoDecoder::Init(Gpu *gpu) {
         av_buffer_unref(&hwDevice_);
     }
     return true;
+#endif
 }
 
 void VideoDecoder::Shutdown() {
@@ -130,9 +160,11 @@ void VideoDecoder::Shutdown() {
         std::lock_guard<std::mutex> lk(mutex_);
         newest_.Reset();
     }
+#ifdef _WIN32
     srvCache_.clear();
     bgraSrv_.reset();
     bgraTex_.reset();
+#endif
     if (sws_) {
         sws_freeContext(sws_);
         sws_ = nullptr;
@@ -147,7 +179,9 @@ void VideoDecoder::CloseCodec() {
     if (codec_) {
         avcodec_free_context(&codec_);
     }
+#ifdef _WIN32
     srvCache_.clear();
+#endif
 }
 
 AVPixelFormat VideoDecoder::GetFormatCb(AVCodecContext *c, const AVPixelFormat *fmts) {
@@ -155,14 +189,14 @@ AVPixelFormat VideoDecoder::GetFormatCb(AVCodecContext *c, const AVPixelFormat *
 
     if (self && self->hwDevice_ && !self->hwSetupFailed_) {
         for (const AVPixelFormat *p = fmts; *p != AV_PIX_FMT_NONE; ++p) {
-            if (*p == AV_PIX_FMT_D3D11) {
+            if (*p == kHwPixFmt) {
                 if (self->SetupHwFrames(c)) {
                     self->usingHardware_ = true;
-                    LOGI("video: D3D11VA hardware decoding (%dx%d)", c->width, c->height);
-                    return AV_PIX_FMT_D3D11;
+                    LOGI("video: %s hardware decoding (%dx%d)", kHwName, c->width, c->height);
+                    return kHwPixFmt;
                 }
                 self->hwSetupFailed_ = true;
-                LOGW("video: D3D11VA unavailable, falling back to software decode");
+                LOGW("video: %s unavailable, falling back to software decode", kHwName);
                 break;
             }
         }
@@ -179,6 +213,11 @@ AVPixelFormat VideoDecoder::GetFormatCb(AVCodecContext *c, const AVPixelFormat *
 }
 
 bool VideoDecoder::SetupHwFrames(AVCodecContext *c) {
+#ifdef __APPLE__
+    // FFmpeg derives VideoToolbox's frame pool from hw_device_ctx itself.
+    (void)c;
+    return true;
+#else
     av_buffer_unref(&c->hw_frames_ctx);
 
     int err = avcodec_get_hw_frames_parameters(c, c->hw_device_ctx, AV_PIX_FMT_D3D11,
@@ -206,6 +245,7 @@ bool VideoDecoder::SetupHwFrames(AVCodecContext *c) {
     }
     srvCache_.clear();
     return true;
+#endif
 }
 
 bool VideoDecoder::SetCodec(bool h265) {
@@ -300,8 +340,8 @@ void VideoDecoder::OnDecodedFrame(AVFrame *f) {
     VideoFrameRef ref;
     bool ok = false;
 
-    if (f->format == AV_PIX_FMT_D3D11) {
-        ok = MakeNV12Views(f, ref);
+    if (f->format == kHwPixFmt) {
+        ok = MakeNV12Views(f, ref) || MakeBGRAFromHw(f, ref);
     } else {
         ok = MakeBGRAView(f, ref);
     }
@@ -312,6 +352,117 @@ void VideoDecoder::OnDecodedFrame(AVFrame *f) {
     newest_ = std::move(ref);
 }
 
+bool VideoDecoder::MakeBGRAFromHw(AVFrame *f, VideoFrameRef &out) {
+    AVFrame *sw = av_frame_alloc();
+    if (!sw) return false;
+    bool ok = av_hwframe_transfer_data(sw, f, 0) >= 0 && MakeBGRAView(sw, out);
+    av_frame_free(&sw);
+    return ok;
+}
+
+#ifdef __APPLE__
+namespace {
+// One plane of a CVPixelBuffer as a Metal texture, sharing its memory.
+bool WrapPlane(Gpu *gpu, CVPixelBufferRef pb, size_t plane, MTLPixelFormat fmt,
+               TexView &out) {
+    CVMetalTextureRef ref = nullptr;
+    const CVReturn rc = CVMetalTextureCacheCreateTextureFromImage(
+        kCFAllocatorDefault, gpu->TextureCache(), pb, nullptr, fmt,
+        CVPixelBufferGetWidthOfPlane(pb, plane), CVPixelBufferGetHeightOfPlane(pb, plane),
+        plane, &ref);
+    if (rc != kCVReturnSuccess || !ref) return false;
+    out.tex = CVMetalTextureGetTexture(ref);
+    // The CVMetalTexture and the pixel buffer both have to outlive any GPU
+    // work that samples this texture; see TexView.
+    out.keep = @[ CFBridgingRelease(ref), (__bridge id)pb ];
+    return out.tex != nil;
+}
+} // namespace
+
+bool VideoDecoder::MakeNV12Views(AVFrame *f, VideoFrameRef &out) {
+    auto pb = (CVPixelBufferRef)f->data[3];
+    if (!pb) return false;
+
+    // AirPlay mirroring is 8-bit 4:2:0; anything else (10-bit HEVC) takes the
+    // download path in OnDecodedFrame.
+    const OSType fmt = CVPixelBufferGetPixelFormatType(pb);
+    if (fmt != kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange &&
+        fmt != kCVPixelFormatType_420YpCbCr8BiPlanarFullRange) {
+        return false;
+    }
+    if (!WrapPlane(gpu_, pb, 0, MTLPixelFormatR8Unorm, out.y) ||
+        !WrapPlane(gpu_, pb, 1, MTLPixelFormatRG8Unorm, out.uv)) {
+        LOGW("video: could not wrap a decoder surface as a Metal texture");
+        out.y.reset();
+        out.uv.reset();
+        return false;
+    }
+
+    out.frame = av_frame_alloc();
+    if (!out.frame || av_frame_ref(out.frame, f) < 0) {
+        if (out.frame) av_frame_free(&out.frame);
+        return false;
+    }
+    const int texW = (int)CVPixelBufferGetWidth(pb);
+    const int texH = (int)CVPixelBufferGetHeight(pb);
+    if (texW != frameLogW_ || f->width != frameLogPicW_) {
+        frameLogW_ = texW;
+        frameLogPicW_ = f->width;
+        LOGI("video: frame %dx%d in a %dx%d surface, crop l%zu r%zu t%zu b%zu", f->width,
+             f->height, texW, texH, f->crop_left, f->crop_right, f->crop_top,
+             f->crop_bottom);
+    }
+    out.width = f->width;
+    out.height = f->height;
+    out.texW = texW;
+    out.texH = texH;
+    out.cropX = (int)f->crop_left;
+    out.cropY = (int)f->crop_top;
+    out.isRGB = false;
+    out.fullRange = (fmt == kCVPixelFormatType_420YpCbCr8BiPlanarFullRange);
+    return true;
+}
+
+bool VideoDecoder::MakeBGRAView(AVFrame *f, VideoFrameRef &out) {
+    const int w = f->width, h = f->height;
+    if (w <= 0 || h <= 0) return false;
+
+    sws_ = sws_getCachedContext(sws_, w, h, (AVPixelFormat)f->format, w, h,
+                                AV_PIX_FMT_BGRA, SWS_BILINEAR, nullptr, nullptr, nullptr);
+    if (!sws_) return false;
+
+    bgra_.resize((size_t)w * h * 4);
+    uint8_t *dst[4] = {bgra_.data(), nullptr, nullptr, nullptr};
+    int stride[4] = {w * 4, 0, 0, 0};
+    sws_scale(sws_, f->data, f->linesize, 0, h, dst, stride);
+
+    // ponytail: a fresh texture per frame, so the one on screen is never
+    // overwritten mid-draw. Software decode is the rare fallback; pool these
+    // if it ever becomes the common path.
+    MTLTextureDescriptor *td =
+        [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatBGRA8Unorm
+                                                           width:(NSUInteger)w
+                                                          height:(NSUInteger)h
+                                                       mipmapped:NO];
+    td.usage = MTLTextureUsageShaderRead;
+    td.storageMode = MTLStorageModeShared;
+    id<MTLTexture> tex = [gpu_->Device() newTextureWithDescriptor:td];
+    if (!tex) return false;
+    [tex replaceRegion:MTLRegionMake2D(0, 0, (NSUInteger)w, (NSUInteger)h)
+           mipmapLevel:0
+             withBytes:bgra_.data()
+           bytesPerRow:(NSUInteger)w * 4];
+
+    out.rgba.tex = tex;
+    out.width = w;
+    out.height = h;
+    out.texW = w;
+    out.texH = h;
+    out.isRGB = true;
+    out.fullRange = true;
+    return true;
+}
+#else
 bool VideoDecoder::MakeNV12Views(AVFrame *f, VideoFrameRef &out) {
     auto *tex = (ID3D11Texture2D *)f->data[0];
     const int index = (int)(intptr_t)f->data[1];
@@ -429,6 +580,7 @@ bool VideoDecoder::MakeBGRAView(AVFrame *f, VideoFrameRef &out) {
     out.fullRange = true;
     return true;
 }
+#endif
 
 bool VideoDecoder::PullNewest(VideoFrameRef &out) {
     std::lock_guard<std::mutex> lk(mutex_);

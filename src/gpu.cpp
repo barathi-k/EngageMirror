@@ -265,10 +265,11 @@ bool Gpu::CompilePS(const char *src, const char *entry, Com<ID3D11PixelShader> &
 // ---------------------------------------------------------------------------
 // GDI text -> premultiplied RGBA texture
 // ---------------------------------------------------------------------------
-bool MakeTextTexture(Gpu &gpu, const std::wstring &text, int pixelHeight, bool bold,
-                     Com<ID3D11ShaderResourceView> &outSrv, int &outW, int &outH) {
+bool MakeTextTexture(Gpu &gpu, const std::string &utf8, int pixelHeight, bool bold,
+                     TexView &outSrv, int &outW, int &outH) {
     outSrv.reset();
-    if (text.empty()) return false;
+    if (utf8.empty()) return false;
+    const std::wstring text = Widen(utf8);
 
     HDC screen = GetDC(nullptr);
     HDC dc = CreateCompatibleDC(screen);

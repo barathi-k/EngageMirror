@@ -24,7 +24,7 @@ struct Skin {
     // Body corner radius in image pixels (used for the drop shadow).
     float cornerRadius = 0.0f;
 
-    Com<ID3D11ShaderResourceView> srv;
+    TexView srv;
 
     int ScreenW() const { return scrX1 - scrX0 + 1; }
     int ScreenH() const { return scrY1 - scrY0 + 1; }
@@ -33,7 +33,8 @@ struct Skin {
     }
 };
 
-// Looks for "<name>.png" beside the executable (and in ./assets, ../assets).
+// Looks for "<name>.png" in the assets folder (beside the exe on Windows, in
+// the bundle's Resources on macOS), then ./assets.
 // Returns false and leaves skin.valid == false when the file is missing or
 // has no transparent interior; callers fall back to the procedural frame.
 bool LoadSkin(Gpu &gpu, const std::string &name, Skin &out);
