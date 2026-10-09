@@ -18,3 +18,4 @@
 # built installers only. See assets/README.md.
 /assets/*
 !/assets/README.md
+/dist-macos/
