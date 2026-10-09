@@ -32,7 +32,7 @@ std::string App::DefaultServiceName() const {
     // advertises under the bare computer name.
     NSString *host = [[NSHost currentHost] localizedName];
     if (host.length == 0) return std::string();
-    return std::string(host.UTF8String) + " (EngageMirror)";
+    return std::string(host.UTF8String) + " (Engage Mirror)";
 }
 
 void App::WorkAreaPx(float &w, float &h) const {
@@ -214,8 +214,8 @@ void App::ShowContextMenu(int x, int y) {
     add(@"Zoom Out", Cmd::ZoomOut, @"-");
     add(@"Actual Size", Cmd::ResetZoom, @"0");
     [menu addItem:[NSMenuItem separatorItem]];
-    add(@"About EngageMirror", Cmd::About, @"");
-    add(@"Quit EngageMirror", Cmd::Quit, @"q").keyEquivalentModifierMask =
+    add(@"About Engage Mirror", Cmd::About, @"");
+    add(@"Quit Engage Mirror", Cmd::Quit, @"q").keyEquivalentModifierMask =
         NSEventModifierFlagCommand;
 
     NSView *view = window_.contentView;

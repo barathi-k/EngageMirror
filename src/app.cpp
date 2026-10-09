@@ -31,8 +31,8 @@ const char *const kUsage =
 const char *const kSourceUrl = "https://github.com/barathi-k/EngageMirror";
 
 const char *const kAboutText =
-    "EngageMirror - AirPlay screen mirroring receiver\n"
-    "Copyright (C) EngageMirror contributors\n\n"
+    "Engage Mirror - AirPlay screen mirroring receiver\n"
+    "Copyright (C) Engage Mirror contributors\n\n"
     "This program is free software: you can redistribute it and/or modify it "
     "under the terms of the GNU General Public License, version 3 or later. "
     "It comes with ABSOLUTELY NO WARRANTY.\n\n"

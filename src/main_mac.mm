@@ -98,12 +98,12 @@ static App g_app;
 
 static NSMenu *MakeMainMenu() {
     NSMenu *bar = [NSMenu new];
-    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"EngageMirror"];
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"Engage Mirror"];
     // nil-targeted: the app delegate is on the responder chain.
-    [appMenu addItemWithTitle:@"About EngageMirror" action:@selector(showAbout:) keyEquivalent:@""];
+    [appMenu addItemWithTitle:@"About Engage Mirror" action:@selector(showAbout:) keyEquivalent:@""];
     [appMenu addItem:[NSMenuItem separatorItem]];
-    [appMenu addItemWithTitle:@"Hide EngageMirror" action:@selector(hide:) keyEquivalent:@"h"];
-    [appMenu addItemWithTitle:@"Quit EngageMirror" action:@selector(terminate:) keyEquivalent:@"q"];
+    [appMenu addItemWithTitle:@"Hide Engage Mirror" action:@selector(hide:) keyEquivalent:@"h"];
+    [appMenu addItemWithTitle:@"Quit Engage Mirror" action:@selector(terminate:) keyEquivalent:@"q"];
     NSMenuItem *appItem = [NSMenuItem new];
     appItem.submenu = appMenu;
     [bar addItem:appItem];
@@ -133,7 +133,7 @@ int main(int argc, const char *argv[]) {
         window.opaque = NO;
         window.backgroundColor = NSColor.clearColor;
         window.hasShadow = NO; // the renderer draws its own contact shadow
-        window.title = @"EngageMirror";
+        window.title = @"Engage Mirror";
         window.acceptsMouseMovedEvents = YES;
         window.releasedWhenClosed = NO;
         AMView *view = [[AMView alloc] initWithFrame:window.contentLayoutRect];
@@ -143,7 +143,7 @@ int main(int argc, const char *argv[]) {
 
         if (!g_app.Init(window, opts)) {
             NSAlert *alert = [NSAlert new];
-            alert.messageText = @"EngageMirror could not start.";
+            alert.messageText = @"Engage Mirror could not start.";
             alert.informativeText = @"Check that no other AirPlay receiver is using the "
                                     @"network and that Wi-Fi or Ethernet is connected.";
             [alert runModal];

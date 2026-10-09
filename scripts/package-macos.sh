@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Builds EngageMirror.app and wraps it in a signed, notarized, stapled DMG.
+# Builds the app and wraps it in a signed, notarized, stapled DMG. The bundle
+# ships as "Engage Mirror.app" (the name shown in Applications); the build
+# tree, executable and bundle ID keep the space-free EngageMirror.
 #
 #   scripts/package-macos.sh               build + sign + DMG + notarize
 #   scripts/package-macos.sh --no-notarize build + sign + DMG only
@@ -25,7 +27,7 @@ notarize=1
 [[ "${1:-}" == "--no-notarize" ]] && notarize=0
 
 VERSION="$(sed -n 's/^project(EngageMirror VERSION \([0-9.]*\).*/\1/p' "$ROOT/CMakeLists.txt")"
-APP="$BUILD/EngageMirror.app"
+BUILT="$BUILD/EngageMirror.app"
 DMG="$OUT/EngageMirror-$VERSION.dmg"
 
 if [[ -z "${SIGN_IDENTITY:-}" ]]; then
@@ -41,6 +43,12 @@ echo ">> building EngageMirror $VERSION"
 cmake -S "$ROOT" -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release >/dev/null
 ninja -C "$BUILD"
 
+# Renaming the bundle directory before signing keeps the signature covering
+# exactly what ships.
+APPDIR="$(mktemp -d)"
+APP="$APPDIR/Engage Mirror.app"
+ditto "$BUILT" "$APP"
+
 frames=$(find "$APP/Contents/Resources/assets" -name '*.png' | wc -l | tr -d ' ')
 echo "   $frames device frame(s) bundled"
 [[ "$frames" -gt 0 ]] || echo "   warning: no device frames - every device gets the procedural frame" >&2
@@ -55,11 +63,11 @@ codesign --verify --strict --verbose=2 "$APP"
 echo ">> creating $DMG"
 mkdir -p "$OUT"
 stage="$(mktemp -d)"
-trap 'rm -rf "$stage"' EXIT
-cp -R "$APP" "$stage/"
+trap 'rm -rf "$stage" "$APPDIR"' EXIT
+ditto "$APP" "$stage/Engage Mirror.app"
 ln -s /Applications "$stage/Applications"
 rm -f "$DMG"
-hdiutil create -volname "EngageMirror $VERSION" -srcfolder "$stage" -ov -format UDZO \
+hdiutil create -volname "Engage Mirror $VERSION" -srcfolder "$stage" -ov -format UDZO \
   -fs HFS+ "$DMG" >/dev/null
 codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG"
 
