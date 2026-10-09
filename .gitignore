@@ -1,0 +1,15 @@
+# Build output
+/build/
+/build-*/
+/dist/
+/installer/output/
+
+# Third-party sources and builds, fetched by scripts/
+/vendor/ffmpeg-src/
+/vendor/ffmpeg-mini/
+/vendor/macos-deps/
+
+# Logs / local
+*.log
+.DS_Store
+/edge_full.png
