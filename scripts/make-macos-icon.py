@@ -5,7 +5,7 @@ The artwork sits on a full rounded-square tile on Apple's icon grid (an 824px
 squircle-ish rect inside a 1024px canvas), so macOS shows it as-is instead of
 boxing a non-conforming shape into its grey fallback tile.
 
-    python3 scripts/make-macos-icon.py [dark|light]
+    python3 scripts/make-macos-icon.py [light|dark]
 """
 import pathlib
 import subprocess
@@ -52,7 +52,7 @@ def tile(theme):
 
 
 def main():
-    theme = sys.argv[1] if len(sys.argv) > 1 else "dark"
+    theme = sys.argv[1] if len(sys.argv) > 1 else "light"
     icon = tile(theme)
     with tempfile.TemporaryDirectory() as tmp:
         iconset = pathlib.Path(tmp) / "EngageMirror.iconset"
