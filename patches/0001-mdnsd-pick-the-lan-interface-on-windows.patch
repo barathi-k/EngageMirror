@@ -1,0 +1,37 @@
+Pick the LAN interface, not whatever the multicast route lands on.
+
+mdnsd chooses its one IPv4 interface with mdns_get_default_ipv4(), which
+UDP-connects to 224.0.0.251 and takes the source address Windows picks. On a
+machine with WSL, Hyper-V or Docker installed that lands on a host-only virtual
+switch: multicast is then joined and sent on an adapter no phone can see, and
+the published A record points at an unroutable address. The receiver appears
+perfectly healthy - it is simply advertising to nobody.
+
+Windows unicast metrics do not help here (WiFi 35 vs vEthernet 5000 and it
+still picked vEthernet), so choose explicitly: an adapter that is up, supports
+multicast and has a default gateway. A host-only virtual switch has no gateway,
+which is what separates it from the real LAN. Falls back to the original
+heuristic if nothing qualifies.
+
+--- a/lib/mdnsd/mdnsd.c
++++ b/lib/mdnsd/mdnsd.c
+@@
+ static uint32_t mdns_get_default_ipv4(void)
+ {
+     int fd;
+     uint32_t addr = 0;
+     struct sockaddr_in remote;
+     struct sockaddr_in local;
+     socklen_t local_len = sizeof(local);
+
++#ifdef WIN32
++    addr = mdns_pick_routable_ipv4();
++    if (addr) {
++        return addr;
++    }
++#endif
++
+     fd = socket(AF_INET, SOCK_DGRAM, 0);
+     if (fd == -1) {
+         return 0;
+     }

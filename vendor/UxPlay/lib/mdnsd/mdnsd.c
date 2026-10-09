@@ -10,6 +10,10 @@
  *  but WITHOUT ANY WARRANTY; without even the implied warranty of
  *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  *  Lesser General Public License for more details.
+ *
+ *=================================================================
+ * modified for AirMirror, August 2026: LAN interface selection on Windows
+ * (see patches/0001-mdnsd-pick-the-lan-interface-on-windows.patch)
  */
 
 #include <ctype.h>
@@ -23,6 +27,9 @@
 #endif
 
 #include "../compat.h"
+#ifdef WIN32
+#include <iphlpapi.h> /* AIRMIRROR PATCH: adapter enumeration, see patches/ */
+#endif
 #include "mdnsd.h"
 
 #define MDNS_ADDR4 "224.0.0.251"
@@ -345,6 +352,83 @@ static int mdns_query_type_matches(uint16_t query_type, uint16_t record_type)
     return query_type == record_type || query_type == DNS_TYPE_ANY;
 }
 
+#ifdef WIN32
+/* AIRMIRROR PATCH (patches/0001-mdnsd-pick-the-lan-interface-on-windows.patch)
+ * Pick an adapter that is up, does multicast and has a default gateway. A
+ * host-only virtual switch (WSL, Hyper-V, Docker) has no gateway, which is what
+ * separates it from the real LAN; without this the responder can end up serving
+ * only a virtual adapter and advertising an address no phone can reach. */
+static uint32_t mdns_pick_routable_ipv4(void)
+{
+    ULONG buflen = 16 * 1024;
+    IP_ADAPTER_ADDRESSES *addrs = (IP_ADAPTER_ADDRESSES *) malloc(buflen);
+    IP_ADAPTER_ADDRESSES *a;
+    uint32_t best = 0;
+    ULONG best_metric = 0xFFFFFFFFu;
+    ULONG rc;
+
+    if (!addrs) {
+        return 0;
+    }
+    /* INCLUDE_GATEWAYS is required or FirstGatewayAddress is always NULL. */
+    rc = GetAdaptersAddresses(AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
+                                       GAA_FLAG_SKIP_DNS_SERVER |
+                                       GAA_FLAG_INCLUDE_GATEWAYS,
+                              NULL, addrs, &buflen);
+    if (rc == ERROR_BUFFER_OVERFLOW) {
+        IP_ADAPTER_ADDRESSES *grown = (IP_ADAPTER_ADDRESSES *) realloc(addrs, buflen);
+        if (!grown) {
+            free(addrs);
+            return 0;
+        }
+        addrs = grown;
+        rc = GetAdaptersAddresses(AF_INET, GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST |
+                                           GAA_FLAG_SKIP_DNS_SERVER,
+                                  NULL, addrs, &buflen);
+    }
+    if (rc != NO_ERROR) {
+        free(addrs);
+        return 0;
+    }
+
+    /* Prefer an adapter with a default gateway; failing that, the lowest-metric
+     * one with a real address. Either way a host-only virtual switch loses:
+     * it has no gateway and its metric is 5000 against WiFi's 35. */
+    for (a = addrs; a; a = a->Next) {
+        IP_ADAPTER_UNICAST_ADDRESS *u;
+        int has_gw;
+        if (a->OperStatus != IfOperStatusUp) continue;
+        if (a->IfType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
+        if (a->NoMulticast) continue;
+        has_gw = a->FirstGatewayAddress ? 1 : 0;
+
+        for (u = a->FirstUnicastAddress; u; u = u->Next) {
+            struct sockaddr_in *sin;
+            uint32_t host;
+            ULONG rank;
+            if (!u->Address.lpSockaddr ||
+                u->Address.lpSockaddr->sa_family != AF_INET) {
+                continue;
+            }
+            sin = (struct sockaddr_in *) u->Address.lpSockaddr;
+            if (sin->sin_addr.s_addr == 0) continue;
+            host = ntohl(sin->sin_addr.s_addr);
+            if ((host & 0xFFFF0000u) == 0xA9FE0000u) continue; /* 169.254 link-local */
+            if ((host >> 24) == 127) continue;
+
+            /* Gateway beats metric, so bias non-gateway adapters far behind. */
+            rank = a->Ipv4Metric + (has_gw ? 0u : 1000000u);
+            if (rank < best_metric) {
+                best_metric = rank;
+                best = sin->sin_addr.s_addr;
+            }
+        }
+    }
+    free(addrs);
+    return best;
+}
+#endif /* WIN32 */
+
 static uint32_t mdns_get_default_ipv4(void)
 {
     int fd;
@@ -352,6 +436,13 @@ static uint32_t mdns_get_default_ipv4(void)
     struct sockaddr_in remote;
     struct sockaddr_in local;
     socklen_t local_len = sizeof(local);
+
+#ifdef WIN32
+    addr = mdns_pick_routable_ipv4();
+    if (addr) {
+        return addr;
+    }
+#endif
 
     fd = socket(AF_INET, SOCK_DGRAM, 0);
     if (fd == -1) {
