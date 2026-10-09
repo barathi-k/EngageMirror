@@ -35,7 +35,7 @@ class AudioPlayer {
 
     // AirPlay compression type: 1=LPCM, 2=ALAC, 4=AAC-LC, 8=AAC-ELD.
     void SetFormat(unsigned char ct);
-    // Runs the output device only while a client is connected: an idle
+    // Runs the output device only while a client is streaming audio: an idle
     // receiver should not keep the audio hardware (and the machine) awake.
     void SetActive(bool active);
     void Submit(const uint8_t *data, int len);

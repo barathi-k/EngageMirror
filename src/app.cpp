@@ -648,7 +648,6 @@ void App::OnConnectionOpened() {
         std::lock_guard<std::mutex> lk(stateMutex_);
         connected_ = true;
     }
-    audio_.SetActive(true);
     SetMirroringActive(true);
     PostClientChanged();
 }
@@ -711,7 +710,13 @@ void App::OnVideoPause(bool paused) {
     paused_ = paused;
 }
 
-void App::OnAudioFormat(unsigned char ct) { audio_.SetFormat(ct); }
+// The output device starts with the audio stream, not the connection: a
+// silent mirroring session would otherwise keep the audio hardware rendering
+// silence for its whole length.
+void App::OnAudioFormat(unsigned char ct) {
+    audio_.SetFormat(ct);
+    audio_.SetActive(true);
+}
 
 void App::OnAudioData(const uint8_t *data, int len) { audio_.Submit(data, len); }
 

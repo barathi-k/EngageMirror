@@ -109,7 +109,7 @@ bool AudioPlayer::OpenDevice() {
     if (!event_ || FAILED(client_->SetEventHandle(event_))) return false;
     if (FAILED(client_->GetService(kIID_IAudioRenderClient, (void **)&render_))) return false;
 
-    // Started by SetActive() when a client connects.
+    // Started by SetActive() when a client starts streaming audio.
     LOGI("audio: WASAPI ready (%u frame buffer)", bufferFrames_);
     return true;
 }
