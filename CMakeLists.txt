@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.16)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "")
 set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "")
 
-project(EngageMirror VERSION 1.0.0 LANGUAGES C CXX)
+project(EngageMirror VERSION 1.0.1 LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------------
 # EngageMirror - an AirPlay mirroring receiver for Windows and macOS that renders

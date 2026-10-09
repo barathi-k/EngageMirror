@@ -43,8 +43,10 @@ def tile(theme):
     canvas.paste(grad, (100, 100), mask)
 
     art = Image.open(ROOT / "maclogo.png").convert("RGBA")
-    w = 700
-    art = art.resize((w, round(art.height * w / art.width)), Image.LANCZOS)
+    # Fit inside a 700x640 box: wide artwork uses the width, squarer artwork
+    # stops short of the tile edges.
+    k = min(700 / art.width, 640 / art.height)
+    art = art.resize((round(art.width * k), round(art.height * k)), Image.LANCZOS)
     canvas.alpha_composite(art, ((size - art.width) // 2, (size - art.height) // 2 + 6))
     return canvas
 
