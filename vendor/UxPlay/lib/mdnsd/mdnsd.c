@@ -12,7 +12,7 @@
  *  Lesser General Public License for more details.
  *
  *=================================================================
- * modified for AirMirror, August 2026: LAN interface selection on Windows
+ * modified for EngageMirror, August 2026: LAN interface selection on Windows
  * (see patches/0001-mdnsd-pick-the-lan-interface-on-windows.patch)
  */
 
@@ -28,7 +28,7 @@
 
 #include "../compat.h"
 #ifdef WIN32
-#include <iphlpapi.h> /* AIRMIRROR PATCH: adapter enumeration, see patches/ */
+#include <iphlpapi.h> /* ENGAGEMIRROR PATCH: adapter enumeration, see patches/ */
 #endif
 #include "mdnsd.h"
 
@@ -353,7 +353,7 @@ static int mdns_query_type_matches(uint16_t query_type, uint16_t record_type)
 }
 
 #ifdef WIN32
-/* AIRMIRROR PATCH (patches/0001-mdnsd-pick-the-lan-interface-on-windows.patch)
+/* ENGAGEMIRROR PATCH (patches/0001-mdnsd-pick-the-lan-interface-on-windows.patch)
  * Pick an adapter that is up, does multicast and has a default gateway. A
  * host-only virtual switch (WSL, Hyper-V, Docker) has no gateway, which is what
  * separates it from the real LAN; without this the responder can end up serving

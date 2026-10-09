@@ -1,4 +1,4 @@
-// AirMirror - GPU device plus a per-pixel transparent presentation surface.
+// EngageMirror - GPU device plus a per-pixel transparent presentation surface.
 // Transparency is what lets the device frame sit on the desktop as a real
 // rounded object with a soft shadow instead of a rectangle with fake corners.
 //

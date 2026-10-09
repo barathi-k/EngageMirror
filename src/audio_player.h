@@ -1,4 +1,4 @@
-// AirMirror - audio output.
+// EngageMirror - audio output.
 //
 // AirPlay hands us one of four payload types; screen mirroring always uses
 // AAC-ELD, which is the reason this app decodes audio with FFmpeg rather than

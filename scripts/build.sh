@@ -22,5 +22,5 @@ cmake -S "$ROOT" -B "$ROOT/build" -G Ninja -DCMAKE_BUILD_TYPE=Release
 ninja -C "$ROOT/build"
 
 echo
-echo "Built: $ROOT/build/airmirror.exe"
+echo "Built: $ROOT/build/engagemirror.exe"
 echo "Run scripts/package.sh to produce a standalone dist/ folder."

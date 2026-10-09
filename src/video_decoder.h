@@ -1,4 +1,4 @@
-// AirMirror - H.264/H.265 decoding.
+// EngageMirror - H.264/H.265 decoding.
 //
 // Preferred path is FFmpeg + a hardware decoder that writes NV12 straight into
 // GPU memory we sample directly in the frame shader, so a mirrored frame never

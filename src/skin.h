@@ -1,4 +1,4 @@
-// AirMirror - PNG device skins.
+// EngageMirror - PNG device skins.
 //
 // A skin is a device photo/render whose screen area is fully transparent. The
 // loader works out the screen rectangle from the alpha channel itself, so

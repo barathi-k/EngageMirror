@@ -1,7 +1,7 @@
-// Windows resource script for airmirror.exe: app icon + version info.
+// Windows resource script for engagemirror.exe: app icon + version info.
 // Generated from resource.rc.in by CMake (configure_file, @ONLY).
 
-IDI_ICON1 ICON "@AIRMIRROR_ICON_PATH@"
+IDI_ICON1 ICON "@ENGAGEMIRROR_ICON_PATH@"
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
@@ -16,13 +16,13 @@ BEGIN
     BEGIN
         BLOCK "040904b0"
         BEGIN
-            VALUE "CompanyName", "AirMirror"
-            VALUE "FileDescription", "AirMirror - AirPlay screen mirroring receiver"
+            VALUE "CompanyName", "EngageMirror"
+            VALUE "FileDescription", "EngageMirror - AirPlay screen mirroring receiver"
             VALUE "FileVersion", "@PROJECT_VERSION@.0"
-            VALUE "InternalName", "airmirror"
+            VALUE "InternalName", "engagemirror"
             VALUE "LegalCopyright", "Copyright (C) contributors. Licensed under GPLv3."
-            VALUE "OriginalFilename", "airmirror.exe"
-            VALUE "ProductName", "AirMirror"
+            VALUE "OriginalFilename", "engagemirror.exe"
+            VALUE "ProductName", "EngageMirror"
             VALUE "ProductVersion", "@PROJECT_VERSION@.0"
         END
     END

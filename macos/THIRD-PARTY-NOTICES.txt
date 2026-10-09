@@ -1,9 +1,9 @@
-AirMirror is free software, licensed under the GNU General Public License
-version 3 or later (AirMirror-GPL-3.0.txt). The complete corresponding source,
+EngageMirror is free software, licensed under the GNU General Public License
+version 3 or later (EngageMirror-GPL-3.0.txt). The complete corresponding source,
 including the build scripts and the exact third-party source archives used for
 this build, is available at:
 
-    https://github.com/barathi-k/AirMirror
+    https://github.com/barathi-k/EngageMirror
 
 This application contains the following third-party software:
 
@@ -20,9 +20,9 @@ This application contains the following third-party software:
   libplist 2.8.0                       LGPL-2.1+   libplist-LGPL-2.1.txt
     https://github.com/libimobiledevice/libplist
 
-The LGPL libraries are linked statically. You may relink AirMirror against
+The LGPL libraries are linked statically. You may relink EngageMirror against
 modified versions of them using the source and build scripts at the address
 above.
 
-AirPlay, iPhone, iPad and Mac are trademarks of Apple Inc. AirMirror is not
+AirPlay, iPhone, iPad and Mac are trademarks of Apple Inc. EngageMirror is not
 affiliated with or endorsed by Apple.

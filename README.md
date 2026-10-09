@@ -1,4 +1,4 @@
-# AirMirror
+# EngageMirror
 
 An AirPlay screen-mirroring receiver for Windows that draws your iPhone or iPad
 screen **inside a matching device frame** — correct aspect ratio, correct bezels,
@@ -32,7 +32,7 @@ iPhone / iPad ──AirPlay──▶ libairplay (UxPlay core) ──▶ FFmpeg +
 
 ## Running
 
-Launch `airmirror.exe`. On the iPhone or iPad open Control Centre →
+Launch `engagemirror.exe`. On the iPhone or iPad open Control Centre →
 **Screen Mirroring** and pick the entry named after your PC.
 
 ### Window controls
@@ -51,7 +51,7 @@ Launch `airmirror.exe`. On the iPhone or iPad open Control Centre →
 ### Command line
 
 ```
-airmirror.exe [--name <text>] [--size <WxH>] [--fps <n>] [--scale <f>] [--h265]
+engagemirror.exe [--name <text>] [--size <WxH>] [--fps <n>] [--scale <f>] [--h265]
               [--device <model>] [--preview <WxH>]
 ```
 
@@ -234,7 +234,7 @@ and only the device itself is draggable.
 
 One genuine protocol limitation: AirPlay reports only the stream's dimensions,
 not *which* way the device was turned, so landscape-left and landscape-right are
-indistinguishable. AirMirror assumes the device's top edge went to the left —
+indistinguishable. EngageMirror assumes the device's top edge went to the left —
 press `L` if it went the other way (that animates too, as a 180° flip).
 
 ## Device skins
@@ -264,8 +264,8 @@ builds a full mip chain, so a 2290×2960 source stays crisp at 900px.
 Check the result without a device attached:
 
 ```
-airmirror.exe --device iPad13,4 --preview 2048x2732     # portrait
-airmirror.exe --device iPad13,4 --preview 2732x2048     # landscape
+engagemirror.exe --device iPad13,4 --preview 2048x2732     # portrait
+engagemirror.exe --device iPad13,4 --preview 2732x2048     # landscape
 ```
 
 If the file is missing or has no transparent interior, the app logs a warning
@@ -292,7 +292,7 @@ Anything you distribute that includes it must be GPLv3 too.
 | FFmpeg (dynamically linked) | LGPL-2.1+ as configured (no `--enable-gpl`) |
 | OpenSSL 3.x | Apache-2.0 |
 | libplist | LGPL-2.1+ |
-| AirMirror source (`src/`) | GPLv3 |
+| EngageMirror source (`src/`) | GPLv3 |
 
 FFmpeg is linked dynamically and built without `--enable-gpl`, so it stays
 LGPL — replaceable by the user, as the LGPL requires.
@@ -300,7 +300,7 @@ LGPL — replaceable by the user, as the LGPL requires.
 ## Troubleshooting
 
 **The PC does not appear on the iPhone.** Both devices must be on the same
-subnet, and Windows Firewall must allow `airmirror.exe` on the *private*
+subnet, and Windows Firewall must allow `engagemirror.exe` on the *private*
 network profile. Verify the advertisement is live:
 
 ```bash
@@ -308,7 +308,7 @@ python scripts/mdns_probe.py     # should list _airplay._tcp -> YOURPC
 ```
 
 **An iPad shows a 16:9 screen.** The iPad chose to send 16:9. Start with
-`--size 1440x1080` to request 4:3. AirMirror always renders the stream at its
+`--size 1440x1080` to request 4:3. EngageMirror always renders the stream at its
 true aspect rather than stretching it to the frame.
 
 **Video is soft when the window is small.** Expected and handled — the shader

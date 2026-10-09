@@ -1,4 +1,4 @@
-// AirMirror - shared utilities.
+// EngageMirror - shared utilities.
 #pragma once
 
 #ifdef _WIN32

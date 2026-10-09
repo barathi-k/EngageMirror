@@ -5,10 +5,10 @@ cmake_minimum_required(VERSION 3.16)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "")
 set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "")
 
-project(AirMirror VERSION 1.0.0 LANGUAGES C CXX)
+project(EngageMirror VERSION 1.0.0 LANGUAGES C CXX)
 
 # ---------------------------------------------------------------------------
-# AirMirror - an AirPlay mirroring receiver for Windows and macOS that renders
+# EngageMirror - an AirPlay mirroring receiver for Windows and macOS that renders
 # the incoming iPhone/iPad screen inside a photorealistic device frame.
 #
 # Core protocol implementation is UxPlay's libairplay (GPLv3). We do NOT use
@@ -24,7 +24,7 @@ elseif(APPLE)
   enable_language(OBJCXX)
   set(PLATFORM_DEFS "")
 else()
-  message(FATAL_ERROR "AirMirror targets Windows and macOS.")
+  message(FATAL_ERROR "EngageMirror targets Windows and macOS.")
 endif()
 
 set(CMAKE_C_STANDARD 11)
@@ -163,7 +163,7 @@ if(WIN32)
   target_link_libraries(airplay PUBLIC ws2_32 wsock32 iphlpapi)
 endif()
 
-set(AIRMIRROR_SHARED_SRC
+set(ENGAGEMIRROR_SHARED_SRC
   src/app.cpp
   src/airplay_server.cpp
   src/device_db.cpp
@@ -174,27 +174,27 @@ set(AIRMIRROR_SHARED_SRC
 
 if(APPLE)
   # ---------------------------------------------------------------------------
-  # AirMirror.app
+  # EngageMirror.app
   # ---------------------------------------------------------------------------
-  set(AIRMIRROR_ICNS "${CMAKE_CURRENT_SOURCE_DIR}/macos/AirMirror.icns")
-  set_source_files_properties(${AIRMIRROR_ICNS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+  set(ENGAGEMIRROR_ICNS "${CMAKE_CURRENT_SOURCE_DIR}/macos/EngageMirror.icns")
+  set_source_files_properties(${ENGAGEMIRROR_ICNS} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 
-  add_executable(airmirror MACOSX_BUNDLE
-    ${AIRMIRROR_SHARED_SRC}
+  add_executable(engagemirror MACOSX_BUNDLE
+    ${ENGAGEMIRROR_SHARED_SRC}
     src/main_mac.mm
     src/app_mac.mm
     src/gpu_mac.mm
     src/renderer_mac.mm
-    ${AIRMIRROR_ICNS})
+    ${ENGAGEMIRROR_ICNS})
 
   # The shared sources include Metal/CoreVideo headers through gpu.h.
-  set_source_files_properties(${AIRMIRROR_SHARED_SRC} PROPERTIES LANGUAGE OBJCXX)
-  target_compile_options(airmirror PRIVATE -fobjc-arc)
-  target_include_directories(airmirror PRIVATE
+  set_source_files_properties(${ENGAGEMIRROR_SHARED_SRC} PROPERTIES LANGUAGE OBJCXX)
+  target_compile_options(engagemirror PRIVATE -fobjc-arc)
+  target_include_directories(engagemirror PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${FFMPEG_INCLUDE_DIRS})
-  target_link_directories(airmirror PRIVATE ${FFMPEG_STATIC_LIBRARY_DIRS})
-  target_link_libraries(airmirror PRIVATE
+  target_link_directories(engagemirror PRIVATE ${FFMPEG_STATIC_LIBRARY_DIRS})
+  target_link_libraries(engagemirror PRIVATE
     airplay
     # Only the -l part: CMake splits pkg-config's "-framework X" pairs, so the
     # frameworks FFmpeg needs are named below instead.
@@ -205,23 +205,23 @@ if(APPLE)
     "-framework CoreGraphics" "-framework ImageIO" "-framework CoreFoundation"
     "-framework CoreServices")
 
-  set_target_properties(airmirror PROPERTIES
-    OUTPUT_NAME AirMirror
+  set_target_properties(engagemirror PROPERTIES
+    OUTPUT_NAME EngageMirror
     SKIP_BUILD_RPATH TRUE # everything is linked statically
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/macos/Info.plist.in"
-    MACOSX_BUNDLE_GUI_IDENTIFIER "com.engagingwebinars.airmirror"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "com.engagingwebinars.engagemirror"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     XCODE_ATTRIBUTE_ENABLE_HARDENED_RUNTIME YES)
 
   # Device frames (local only, see assets/README.md) and the licence texts of
   # everything linked in: the binary is GPLv3 and carries LGPL/Apache/MIT code.
-  set(RES "$<TARGET_BUNDLE_CONTENT_DIR:airmirror>/Resources")
+  set(RES "$<TARGET_BUNDLE_CONTENT_DIR:engagemirror>/Resources")
   set(DEPS_BUILD "${MACOS_DEPS}/build")
-  add_custom_command(TARGET airmirror POST_BUILD
+  add_custom_command(TARGET engagemirror POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E make_directory "${RES}/assets" "${RES}/licenses"
     COMMAND rsync -a --delete --include=*.png --exclude=* "${CMAKE_CURRENT_SOURCE_DIR}/assets/" "${RES}/assets/"
-    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${RES}/licenses/AirMirror-GPL-3.0.txt"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE" "${RES}/licenses/EngageMirror-GPL-3.0.txt"
     COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_CURRENT_SOURCE_DIR}/macos/THIRD-PARTY-NOTICES.txt" "${RES}/licenses/"
     COMMAND ${CMAKE_COMMAND} -E copy "${UXPLAY_DIR}/LICENSE" "${RES}/licenses/UxPlay-GPL-3.0.txt"
     COMMAND ${CMAKE_COMMAND} -E copy "${UXPLAY_DIR}/lib/llhttp/LICENSE-MIT" "${RES}/licenses/llhttp-MIT.txt"
@@ -234,27 +234,27 @@ if(APPLE)
 endif()
 
 # ---------------------------------------------------------------------------
-# AirMirror application
+# EngageMirror application
 # ---------------------------------------------------------------------------
 
 # App icon + version info (installer/icon.ico, generated from logo.png).
-set(AIRMIRROR_ICON_PATH "${CMAKE_CURRENT_SOURCE_DIR}/installer/icon.ico")
+set(ENGAGEMIRROR_ICON_PATH "${CMAKE_CURRENT_SOURCE_DIR}/installer/icon.ico")
 configure_file(src/resource.rc.in ${CMAKE_CURRENT_BINARY_DIR}/resource.rc @ONLY)
 
-add_executable(airmirror WIN32
-  ${AIRMIRROR_SHARED_SRC}
+add_executable(engagemirror WIN32
+  ${ENGAGEMIRROR_SHARED_SRC}
   src/main.cpp
   src/gpu.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/resource.rc)
 
-target_include_directories(airmirror PRIVATE
+target_include_directories(engagemirror PRIVATE
   ${CMAKE_CURRENT_SOURCE_DIR}/src
   ${FFMPEG_INCLUDE_DIRS})
-target_link_directories(airmirror PRIVATE ${FFMPEG_LIBRARY_DIRS})
-target_compile_definitions(airmirror PRIVATE
+target_link_directories(engagemirror PRIVATE ${FFMPEG_LIBRARY_DIRS})
+target_compile_definitions(engagemirror PRIVATE
   UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0601)
 
-target_link_libraries(airmirror PRIVATE
+target_link_libraries(engagemirror PRIVATE
   airplay
   ${FFMPEG_LIBRARIES}
   d3d11 dxgi dcomp d3dcompiler dwmapi windowscodecs
@@ -266,10 +266,10 @@ target_link_libraries(airmirror PRIVATE
 #
 # Note: libwinpthread.a's whole-archive objects carry their own embedded
 # VS_VERSION_INFO (id 1) that wins over resource.rc's during ld's resource
-# merge regardless of link-line order (a binutils quirk) - airmirror.exe's
+# merge regardless of link-line order (a binutils quirk) - engagemirror.exe's
 # Properties > Details tab shows MinGW's strings, not ours. The app icon
 # (also from resource.rc) is unaffected and embeds correctly.
-target_link_options(airmirror PRIVATE
+target_link_options(engagemirror PRIVATE
   -municode
   -static-libgcc -static-libstdc++
   -Wl,-Bstatic,--whole-archive -lwinpthread -Wl,--no-whole-archive,-Bdynamic
@@ -280,15 +280,15 @@ target_link_options(airmirror PRIVATE
 if(FFMPEG_RUNTIME_DIR)
   file(GLOB FFMPEG_DLLS "${FFMPEG_RUNTIME_DIR}/*.dll")
   foreach(dll ${FFMPEG_DLLS})
-    add_custom_command(TARGET airmirror POST_BUILD
-      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${dll}" "$<TARGET_FILE_DIR:airmirror>")
+    add_custom_command(TARGET engagemirror POST_BUILD
+      COMMAND ${CMAKE_COMMAND} -E copy_if_different "${dll}" "$<TARGET_FILE_DIR:engagemirror>")
   endforeach()
 endif()
 
 # Device skins live beside the exe so a dev build finds them too.
-add_custom_command(TARGET airmirror POST_BUILD
+add_custom_command(TARGET engagemirror POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_directory
-          "${CMAKE_CURRENT_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:airmirror>/assets")
+          "${CMAKE_CURRENT_SOURCE_DIR}/assets" "$<TARGET_FILE_DIR:engagemirror>/assets")
 
-install(TARGETS airmirror RUNTIME DESTINATION .)
+install(TARGETS engagemirror RUNTIME DESTINATION .)
 install(DIRECTORY assets/ DESTINATION assets)

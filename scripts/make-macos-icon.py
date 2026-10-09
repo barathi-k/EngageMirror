@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Builds macos/AirMirror.icns from maclogo.png (needs Pillow and iconutil).
+"""Builds macos/EngageMirror.icns from maclogo.png (needs Pillow and iconutil).
 
 The artwork sits on a full rounded-square tile on Apple's icon grid (an 824px
 squircle-ish rect inside a 1024px canvas), so macOS shows it as-is instead of
@@ -53,14 +53,14 @@ def main():
     theme = sys.argv[1] if len(sys.argv) > 1 else "dark"
     icon = tile(theme)
     with tempfile.TemporaryDirectory() as tmp:
-        iconset = pathlib.Path(tmp) / "AirMirror.iconset"
+        iconset = pathlib.Path(tmp) / "EngageMirror.iconset"
         iconset.mkdir()
         for pt in (16, 32, 128, 256, 512):
             for scale in (1, 2):
                 px = pt * scale
                 name = f"icon_{pt}x{pt}{'@2x' if scale == 2 else ''}.png"
                 icon.resize((px, px), Image.LANCZOS).save(iconset / name)
-        out = ROOT / "macos" / "AirMirror.icns"
+        out = ROOT / "macos" / "EngageMirror.icns"
         subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(out)], check=True)
     print(f"wrote {out}")
 

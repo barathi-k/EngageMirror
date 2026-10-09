@@ -1,12 +1,12 @@
-AirMirror
+EngageMirror
 Copyright (C) contributors
 
-AirMirror is free software: you can redistribute it and/or modify it under
+EngageMirror is free software: you can redistribute it and/or modify it under
 the terms of the GNU General Public License as published by the Free
 Software Foundation, either version 3 of the License, or (at your option)
 any later version.
 
-AirMirror links UxPlay's libairplay (GPLv3), which is why the combined
+EngageMirror links UxPlay's libairplay (GPLv3), which is why the combined
 work is GPLv3. See README.md for the full breakdown of bundled components
 and their individual licenses (UxPlay/mdnsd: GPLv3/LGPL-2.1, playfair: see
 vendor/UxPlay/lib/playfair/LICENSE.md, llhttp: MIT, FFmpeg: LGPL-2.1+,

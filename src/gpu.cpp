@@ -18,7 +18,7 @@ static FILE *LogFile() {
         if (!GetModuleFileNameW(nullptr, path, MAX_PATH)) return (FILE *)nullptr;
         wchar_t *slash = wcsrchr(path, L'\\');
         if (!slash) return (FILE *)nullptr;
-        wcscpy_s(slash + 1, MAX_PATH - (slash + 1 - path), L"airmirror.log");
+        wcscpy_s(slash + 1, MAX_PATH - (slash + 1 - path), L"engagemirror.log");
         FILE *fp = _wfopen(path, L"w");
         // Unbuffered: the log has to survive the process being killed, and it
         // is only a handful of lines a session.
@@ -85,7 +85,7 @@ bool Gpu::Init(HWND hwnd) {
     lockInit_ = true;
 
     UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT | D3D11_CREATE_DEVICE_VIDEO_SUPPORT;
-#if !defined(NDEBUG) && defined(AIRMIRROR_D3D_DEBUG)
+#if !defined(NDEBUG) && defined(ENGAGEMIRROR_D3D_DEBUG)
     flags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
 

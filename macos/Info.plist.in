@@ -7,15 +7,15 @@
 	<key>CFBundleExecutable</key>
 	<string>${MACOSX_BUNDLE_EXECUTABLE_NAME}</string>
 	<key>CFBundleIconFile</key>
-	<string>AirMirror</string>
+	<string>EngageMirror</string>
 	<key>CFBundleIdentifier</key>
 	<string>${MACOSX_BUNDLE_GUI_IDENTIFIER}</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>AirMirror</string>
+	<string>EngageMirror</string>
 	<key>CFBundleDisplayName</key>
-	<string>AirMirror</string>
+	<string>EngageMirror</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -29,11 +29,11 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSHumanReadableCopyright</key>
-	<string>Copyright © AirMirror contributors. Free software under the GNU GPL v3.</string>
+	<string>Copyright © EngageMirror contributors. Free software under the GNU GPL v3.</string>
 	<!-- macOS 15+ asks before an app may use the local network; an AirPlay
 	     receiver has to advertise itself and accept connections on it. -->
 	<key>NSLocalNetworkUsageDescription</key>
-	<string>AirMirror needs the local network so your iPhone or iPad can find this Mac and mirror its screen to it.</string>
+	<string>EngageMirror needs the local network so your iPhone or iPad can find this Mac and mirror its screen to it.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_airplay._tcp</string>

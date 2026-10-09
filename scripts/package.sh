@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Collects airmirror.exe plus every MSYS2 DLL it needs (transitively) into
+# Collects engagemirror.exe plus every MSYS2 DLL it needs (transitively) into
 # dist/, producing a folder that runs on a PC with no MSYS2 and no Bonjour.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-EXE="$ROOT/build/airmirror.exe"
+EXE="$ROOT/build/engagemirror.exe"
 DIST="$ROOT/dist"
 PREFIX="/c/msys64/ucrt64"
 

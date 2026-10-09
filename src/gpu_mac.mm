@@ -1,4 +1,4 @@
-// AirMirror - Metal device, transparent CAMetalLayer, logging and text (macOS).
+// EngageMirror - Metal device, transparent CAMetalLayer, logging and text (macOS).
 #include "gpu.h"
 
 #import <AppKit/AppKit.h>
@@ -12,7 +12,7 @@
 // ---------------------------------------------------------------------------
 // Logging / small helpers
 // ---------------------------------------------------------------------------
-// ~/Library/Logs/AirMirror.log, where Console.app finds it.
+// ~/Library/Logs/EngageMirror.log, where Console.app finds it.
 static FILE *LogFile() {
     static FILE *f = [] {
         NSString *dir = [NSHomeDirectory() stringByAppendingPathComponent:@"Library/Logs"];
@@ -20,7 +20,7 @@ static FILE *LogFile() {
                                   withIntermediateDirectories:YES
                                                    attributes:nil
                                                         error:nil];
-        NSString *path = [dir stringByAppendingPathComponent:@"AirMirror.log"];
+        NSString *path = [dir stringByAppendingPathComponent:@"EngageMirror.log"];
         FILE *fp = fopen(path.fileSystemRepresentation, "w");
         // Unbuffered: the log has to survive the process being killed, and it
         // is only a handful of lines a session.

@@ -1,4 +1,4 @@
-// AirMirror - draws the mirrored screen inside a device frame.
+// EngageMirror - draws the mirrored screen inside a device frame.
 //
 // Geometry is expressed in the device's own portrait frame ("device space")
 // and the whole chassis is rotated by an angle at draw time, so turning the

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds a stripped FFmpeg containing only what AirMirror decodes.
+# Builds a stripped FFmpeg containing only what EngageMirror decodes.
 #
 # MSYS2's stock ffmpeg package pulls in every encoder plus pango/cairo/librsvg,
 # which balloons a redistributable build to ~115 MB. Everything we actually

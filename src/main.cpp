@@ -1,4 +1,4 @@
-// AirMirror - entry point and window shell.
+// EngageMirror - entry point and window shell.
 #include "app.h"
 
 #include <objbase.h>
@@ -58,7 +58,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
     AppOptions opts;
     bool showHelp = false;
     if (!ParseArgs(opts, showHelp) || showHelp) {
-        MessageBoxW(nullptr, Widen(kUsage).c_str(), L"AirMirror",
+        MessageBoxW(nullptr, Widen(kUsage).c_str(), L"EngageMirror",
                     showHelp ? MB_ICONINFORMATION : MB_ICONWARNING);
         if (showHelp) return 0;
     }
@@ -75,10 +75,10 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
     wc.hInstance = hInst;
     wc.hCursor = LoadCursorW(nullptr, IDC_ARROW);
     wc.hbrBackground = nullptr;
-    wc.lpszClassName = L"AirMirrorWindow";
+    wc.lpszClassName = L"EngageMirrorWindow";
     wc.hIcon = LoadIconW(nullptr, IDI_APPLICATION);
     if (!RegisterClassExW(&wc)) {
-        MessageBoxW(nullptr, L"Failed to register the window class.", L"AirMirror",
+        MessageBoxW(nullptr, L"Failed to register the window class.", L"EngageMirror",
                     MB_ICONERROR);
         return 1;
     }
@@ -86,19 +86,19 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
     // WS_EX_NOREDIRECTIONBITMAP is what allows the DirectComposition swap chain
     // to be genuinely transparent instead of compositing onto a black window.
     HWND hwnd = CreateWindowExW(WS_EX_NOREDIRECTIONBITMAP | WS_EX_APPWINDOW,
-                                wc.lpszClassName, L"AirMirror", WS_POPUP, CW_USEDEFAULT,
+                                wc.lpszClassName, L"EngageMirror", WS_POPUP, CW_USEDEFAULT,
                                 CW_USEDEFAULT, 420, 860, nullptr, nullptr, hInst, nullptr);
     if (!hwnd) {
-        MessageBoxW(nullptr, L"Failed to create the window.", L"AirMirror", MB_ICONERROR);
+        MessageBoxW(nullptr, L"Failed to create the window.", L"EngageMirror", MB_ICONERROR);
         return 1;
     }
 
     App app;
     g_app = &app;
     if (!app.Init(hwnd, opts)) {
-        MessageBoxW(hwnd, L"AirMirror could not start.\n\nCheck that no other AirPlay "
+        MessageBoxW(hwnd, L"EngageMirror could not start.\n\nCheck that no other AirPlay "
                           L"receiver is running and that a network adapter is active.",
-                    L"AirMirror", MB_ICONERROR);
+                    L"EngageMirror", MB_ICONERROR);
         app.Shutdown();
         return 1;
     }

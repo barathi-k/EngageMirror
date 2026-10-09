@@ -1,4 +1,4 @@
-// AirMirror - macOS entry point and window shell.
+// EngageMirror - macOS entry point and window shell.
 #include "app.h"
 
 #import <AppKit/AppKit.h>
@@ -98,12 +98,12 @@ static App g_app;
 
 static NSMenu *MakeMainMenu() {
     NSMenu *bar = [NSMenu new];
-    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"AirMirror"];
+    NSMenu *appMenu = [[NSMenu alloc] initWithTitle:@"EngageMirror"];
     // nil-targeted: the app delegate is on the responder chain.
-    [appMenu addItemWithTitle:@"About AirMirror" action:@selector(showAbout:) keyEquivalent:@""];
+    [appMenu addItemWithTitle:@"About EngageMirror" action:@selector(showAbout:) keyEquivalent:@""];
     [appMenu addItem:[NSMenuItem separatorItem]];
-    [appMenu addItemWithTitle:@"Hide AirMirror" action:@selector(hide:) keyEquivalent:@"h"];
-    [appMenu addItemWithTitle:@"Quit AirMirror" action:@selector(terminate:) keyEquivalent:@"q"];
+    [appMenu addItemWithTitle:@"Hide EngageMirror" action:@selector(hide:) keyEquivalent:@"h"];
+    [appMenu addItemWithTitle:@"Quit EngageMirror" action:@selector(terminate:) keyEquivalent:@"q"];
     NSMenuItem *appItem = [NSMenuItem new];
     appItem.submenu = appMenu;
     [bar addItem:appItem];
@@ -133,7 +133,7 @@ int main(int argc, const char *argv[]) {
         window.opaque = NO;
         window.backgroundColor = NSColor.clearColor;
         window.hasShadow = NO; // the renderer draws its own contact shadow
-        window.title = @"AirMirror";
+        window.title = @"EngageMirror";
         window.acceptsMouseMovedEvents = YES;
         window.releasedWhenClosed = NO;
         AMView *view = [[AMView alloc] initWithFrame:window.contentLayoutRect];
@@ -143,7 +143,7 @@ int main(int argc, const char *argv[]) {
 
         if (!g_app.Init(window, opts)) {
             NSAlert *alert = [NSAlert new];
-            alert.messageText = @"AirMirror could not start.";
+            alert.messageText = @"EngageMirror could not start.";
             alert.informativeText = @"Check that no other AirPlay receiver is using the "
                                     @"network and that Wi-Fi or Ethernet is connected.";
             [alert runModal];

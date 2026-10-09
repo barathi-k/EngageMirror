@@ -1,6 +1,6 @@
 # Device frames
 
-AirMirror draws the mirrored screen inside a picture of the device when it
+EngageMirror draws the mirrored screen inside a picture of the device when it
 finds one here, and falls back to a drawn (procedural) frame when it doesn't.
 The images are **not** part of this repository: device artwork is generally
 not redistributable, so bring your own.

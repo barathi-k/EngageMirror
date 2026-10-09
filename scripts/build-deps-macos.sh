@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds AirMirror's third-party libraries for macOS as static archives:
+# Builds EngageMirror's third-party libraries for macOS as static archives:
 # OpenSSL (libcrypto only), libplist, and a stripped FFmpeg with VideoToolbox.
 #
 # Everything is built from pinned, checksummed release tarballs rather than

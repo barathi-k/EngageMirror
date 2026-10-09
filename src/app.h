@@ -1,4 +1,4 @@
-// AirMirror - application state: owns the AirPlay server, the media pipeline
+// EngageMirror - application state: owns the AirPlay server, the media pipeline
 // and the renderer, and pivots the whole device when the real one is turned.
 #pragma once
 

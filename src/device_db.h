@@ -1,4 +1,4 @@
-// AirMirror - maps an AirPlay client's model identifier to a device frame style.
+// EngageMirror - maps an AirPlay client's model identifier to a device frame style.
 //
 // Design note: geometry that must be *exact* (the screen's aspect ratio) is
 // always taken from the live video stream, never from this table. The table

@@ -9,7 +9,7 @@
 #include <cstdlib>
 
 const char *const kUsage =
-    "AirMirror - AirPlay screen mirroring receiver\n\n"
+    "EngageMirror - AirPlay screen mirroring receiver\n\n"
     "  --name <text>     Name shown in the iPhone/iPad AirPlay list\n"
     "                    (default: this computer's name)\n"
     "  --size <WxH>      Display size advertised to the client.\n"
@@ -28,18 +28,18 @@ const char *const kUsage =
     "In the window: drag to move, wheel to resize, right-click for a menu.\n"
     "L flips landscape orientation, M mutes, 0 resets size, Esc quits.";
 
-const char *const kSourceUrl = "https://github.com/barathi-k/AirMirror";
+const char *const kSourceUrl = "https://github.com/barathi-k/EngageMirror";
 
 const char *const kAboutText =
-    "AirMirror - AirPlay screen mirroring receiver\n"
-    "Copyright (C) AirMirror contributors\n\n"
+    "EngageMirror - AirPlay screen mirroring receiver\n"
+    "Copyright (C) EngageMirror contributors\n\n"
     "This program is free software: you can redistribute it and/or modify it "
     "under the terms of the GNU General Public License, version 3 or later. "
     "It comes with ABSOLUTELY NO WARRANTY.\n\n"
     "Built on UxPlay (GPLv3), FFmpeg (LGPL-2.1+), OpenSSL (Apache-2.0), "
     "libplist (LGPL-2.1+) and llhttp (MIT). Licence texts are included with "
     "the application.\n\n"
-    "Source code: https://github.com/barathi-k/AirMirror";
+    "Source code: https://github.com/barathi-k/EngageMirror";
 
 bool ParseAppOptions(const std::vector<std::string> &args, AppOptions &opts,
                      bool &showHelp) {
@@ -164,7 +164,7 @@ bool App::Init(NativeWindow window, const AppOptions &opts) {
     cfg.allowH265 = opts.allowH265;
 
     cfg.serviceName = opts.serviceName.empty() ? DefaultServiceName() : opts.serviceName;
-    if (cfg.serviceName.empty()) cfg.serviceName = "AirMirror";
+    if (cfg.serviceName.empty()) cfg.serviceName = "EngageMirror";
     if (!server_.Start(cfg, this)) {
         LOGE("AirPlay server failed to start");
         return false;
@@ -764,7 +764,7 @@ void App::PlatformCommand(Cmd c) {
     if (c == Cmd::Quit) {
         PostMessageW(window_, WM_CLOSE, 0, 0);
     } else if (c == Cmd::About) {
-        MessageBoxW(window_, Widen(kAboutText).c_str(), L"About AirMirror",
+        MessageBoxW(window_, Widen(kAboutText).c_str(), L"About EngageMirror",
                     MB_ICONINFORMATION);
     }
 }
@@ -927,7 +927,7 @@ void App::ShowContextMenu(int x, int y) {
     AppendMenuW(menu, MF_STRING, kMenuZoomOut, L"Zoom out\t-");
     AppendMenuW(menu, MF_STRING, kMenuResetZoom, L"Reset size\t0");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
-    AppendMenuW(menu, MF_STRING, kMenuAbout, L"About AirMirror");
+    AppendMenuW(menu, MF_STRING, kMenuAbout, L"About EngageMirror");
     AppendMenuW(menu, MF_STRING, kMenuQuit, L"Quit\tEsc");
 
     SetForegroundWindow(window_);

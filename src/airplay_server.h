@@ -1,4 +1,4 @@
-// AirMirror - thin wrapper over UxPlay's libairplay.
+// EngageMirror - thin wrapper over UxPlay's libairplay.
 //
 // Service discovery: on Windows, UxPlay's built-in mDNS responder (lib/mdnsd),
 // so the machine does NOT need Apple's Bonjour service installed. On macOS,
@@ -36,7 +36,7 @@ class AirPlaySink {
 };
 
 struct AirPlayConfig {
-    std::string serviceName = "AirMirror";
+    std::string serviceName = "EngageMirror";
     unsigned short width = 1920;
     unsigned short height = 1080;
     unsigned short refreshRate = 60;

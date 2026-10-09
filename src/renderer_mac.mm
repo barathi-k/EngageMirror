@@ -1,4 +1,4 @@
-// AirMirror - Metal renderer (macOS). A line-for-line port of the HLSL in
+// EngageMirror - Metal renderer (macOS). A line-for-line port of the HLSL in
 // renderer.cpp; keep the two in step. Layout maths and FrameCB filling are
 // shared and live in renderer.cpp.
 #include "renderer.h"
