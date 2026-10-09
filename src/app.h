@@ -82,6 +82,9 @@ class App : public AirPlaySink {
 #else
     // Tick now, and keep ticking at frame rate for as long as Animating().
     void RunTick();
+    // Raises the Local Network prompt and re-advertises once access is
+    // granted; see app_mac.mm.
+    void WatchLocalNetwork();
 #endif
 
     // ---- AirPlaySink ----

@@ -203,7 +203,7 @@ if(APPLE)
     "-framework CoreVideo" "-framework CoreMedia" "-framework VideoToolbox"
     "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreText"
     "-framework CoreGraphics" "-framework ImageIO" "-framework CoreFoundation"
-    "-framework CoreServices")
+    "-framework CoreServices" "-framework Network")
 
   set_target_properties(engagemirror PROPERTIES
     OUTPUT_NAME EngageMirror

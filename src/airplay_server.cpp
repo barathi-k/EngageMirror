@@ -347,6 +347,17 @@ bool AirPlayServer::Start(const AirPlayConfig &cfg, AirPlaySink *sink) {
     return true;
 }
 
+void AirPlayServer::Readvertise() {
+    if (!dnssd_ || !raop_) return;
+    dnssd_unregister_raop(dnssd_);
+    dnssd_unregister_airplay(dnssd_);
+    if (dnssd_register_raop(dnssd_, port_) || dnssd_register_airplay(dnssd_, port_)) {
+        LOGE("re-advertising failed");
+        return;
+    }
+    LOGI("re-advertised \"%s\"", name_.c_str());
+}
+
 void AirPlayServer::Stop() {
     if (dnssd_) {
         dnssd_unregister_raop(dnssd_);

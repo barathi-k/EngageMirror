@@ -3,6 +3,7 @@
 #include "app.h"
 
 #import <AppKit/AppKit.h>
+#include <Network/Network.h>
 
 #include <cmath>
 
@@ -125,6 +126,51 @@ void App::SetMirroringActive(bool active) {
           g_activity = nil;
       }
     });
+}
+
+// macOS 15+ gates the local network per app. Until the user allows it, our
+// Bonjour registration is silently withheld - and one made before the grant
+// stays dead, so clicking Allow would not make the Mac appear until a relaunch.
+// A Bonjour browser is how an app can observe that permission: it raises the
+// prompt, sits in "waiting" (PolicyDenied) while access is off, and turns
+// "ready" when it is granted. On that transition we re-advertise; once our own
+// service shows up in the results the browser is cancelled, so this costs
+// nothing afterwards. Event-driven throughout - nothing is polled.
+void App::WatchLocalNetwork() {
+    static nw_browser_t browser = nullptr;
+    if (browser) return;
+
+    nw_browse_descriptor_t desc =
+        nw_browse_descriptor_create_bonjour_service("_airplay._tcp", "local.");
+    nw_parameters_t params = nw_parameters_create();
+    browser = nw_browser_create(desc, params);
+    nw_browser_set_queue(browser, dispatch_get_main_queue());
+
+    const std::string ownName = server_.ServiceName();
+    __block bool wasBlocked = false;
+    nw_browser_set_state_changed_handler(browser, ^(nw_browser_state_t state, nw_error_t err) {
+      if (state == nw_browser_state_waiting) {
+          if (!wasBlocked) LOGW("local network access is off - waiting for permission");
+          wasBlocked = true;
+      } else if (state == nw_browser_state_ready && wasBlocked) {
+          wasBlocked = false;
+          LOGI("local network access granted");
+          server_.Readvertise();
+      } else if (state == nw_browser_state_failed) {
+          LOGW("local network watch failed (%d)", err ? nw_error_get_error_code(err) : 0);
+      }
+    });
+    nw_browser_set_browse_results_changed_handler(
+        browser, ^(nw_browse_result_t, nw_browse_result_t now, bool) {
+          if (!now) return;
+          nw_endpoint_t ep = nw_browse_result_copy_endpoint(now);
+          const char *name = nw_endpoint_get_bonjour_service_name(ep);
+          if (name && ownName == name) {
+              LOGI("advertisement visible on the local network");
+              nw_browser_cancel(browser);
+          }
+        });
+    nw_browser_start(browser);
 }
 
 void App::PlatformCommand(Cmd c) {

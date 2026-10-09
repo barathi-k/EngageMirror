@@ -48,6 +48,9 @@ class AirPlayServer {
   public:
     bool Start(const AirPlayConfig &cfg, AirPlaySink *sink);
     void Stop();
+    // Withdraws and re-publishes the Bonjour records. macOS drops a
+    // registration made before the user grants Local Network access.
+    void Readvertise();
 
     AirPlaySink *sink() const { return sink_; }
     const std::string &ServiceName() const { return name_; }

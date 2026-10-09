@@ -151,6 +151,8 @@ int main(int argc, const char *argv[]) {
             return 1;
         }
 
+        g_app.WatchLocalNetwork();
+
         NSNotificationCenter *nc = [NSNotificationCenter defaultCenter];
         for (NSNotificationName name in @[
                  NSWindowDidChangeBackingPropertiesNotification,
