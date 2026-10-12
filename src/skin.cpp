@@ -259,13 +259,18 @@ bool Analyse(const std::vector<uint8_t> &px, int w, int h, Skin &s) {
     s.cornerRadius = (float)k / (1.0f - 0.70710678f);
 
     // Same measurement for the screen cutout, walking in from its corner
-    // until the glass starts. On a thin-bezel phone that corner can lie
-    // outside the device altogether, so cross any exterior first, then the
-    // bezel.
+    // until the glass starts. "Glass" is transparent *and* enclosed by the
+    // body - the same test that found the cutout - because on a thin-bezel
+    // phone that corner lies outside the device altogether, while on a
+    // square-cornered screen (iPhone 8) it already is glass and the radius
+    // is 0.
+    auto glass = [&](int x, int y) {
+        return !opaque(x, y) && rowL[y] >= 0 && x > rowL[y] && x < rowR[y] &&
+               colT[x] >= 0 && y > colT[x] && y < colB[x];
+    };
     k = 0;
     const int maxS = std::min(sx1 - sx0, sy1 - sy0) / 2;
-    while (k < maxS && !opaque(sx0 + k, sy0 + k)) k++;
-    while (k < maxS && opaque(sx0 + k, sy0 + k)) k++;
+    while (k < maxS && !glass(sx0 + k, sy0 + k)) k++;
     s.screenRadius = (float)k / (1.0f - 0.70710678f);
     return true;
 }
