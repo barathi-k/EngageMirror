@@ -398,6 +398,23 @@ void Renderer::Render() {
         FillFrameCB(lastCB_, vpW, vpH);
         const bool skinned = device_.useSkin && skin_ && skin_->valid;
 
+        // The window is larger than the device (it fits either orientation);
+        // only shade the device and its shadow. The clear still covers it all.
+        float ex, ey, ax, ay;
+        DeviceExtent(device_, ex, ey);
+        const float m = ShadowMargin(device_);
+        RotatedExtent(ex + m, ey + m, frame_.angleDeg, ax, ay);
+        ax *= frame_.scale;
+        ay *= frame_.scale;
+        const float x0 = Clampf(std::floor(frame_.centerX - ax), 0.0f, vpW);
+        const float y0 = Clampf(std::floor(frame_.centerY - ay), 0.0f, vpH);
+        const float x1 = Clampf(std::ceil(frame_.centerX + ax), 0.0f, vpW);
+        const float y1 = Clampf(std::ceil(frame_.centerY + ay), 0.0f, vpH);
+        if (x1 > x0 && y1 > y0) {
+            [enc_ setScissorRect:(MTLScissorRect){(NSUInteger)x0, (NSUInteger)y0,
+                                                  (NSUInteger)(x1 - x0), (NSUInteger)(y1 - y0)}];
+        }
+
         [enc_ setRenderPipelineState:pipeFrame_];
         [enc_ setFragmentBytes:&lastCB_ length:sizeof(lastCB_) atIndex:0];
         [enc_ setFragmentTexture:(videoY_ ? videoY_.tex : dummy_) atIndex:0];

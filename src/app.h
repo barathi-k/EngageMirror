@@ -116,7 +116,13 @@ class App : public AirPlaySink {
     void AdoptFrame(VideoFrameRef &&f);
     void RecomputeVideoRect();
     float TargetAngle() const;
-    float WorkAreaLimit() const;
+    void WorkAreaLimits(float &w, float &h) const;
+    // How big the device is drawn when turned sideways, relative to portrait.
+    float LandscapeScale() const;
+    // The settled scale for an orientation, and the largest scale at which the
+    // device turned to angleDeg still fits the window.
+    float OrientScale(float angleDeg) const;
+    float FitScale(float angleDeg) const;
     void ResizeWindow();
     void UpdateIdleText();
     float BaseLongEdge() const;
@@ -171,7 +177,9 @@ class App : public AirPlaySink {
     std::map<std::string, Skin> skins_;
     DeviceLayout dev_;
     float devHx_ = 0, devHy_ = 0;        // drawn half-extent, device space
-    float fitHalf_ = 0;                  // half-side of the square window's device area
+    float shadowM_ = 0;                  // shadow clearance around it
+    float landK_ = 1.0f;                 // landscape scale (portrait is 1)
+    float winW_ = 0, winH_ = 0;          // window size, fits both orientations
     float appliedW_ = 0, appliedH_ = 0;  // stream dims the layout was built for
     bool landscapeFlip_ = false;
     float userScale_ = 1.0f;
@@ -189,6 +197,7 @@ class App : public AirPlaySink {
     float angleDeg_ = 0.0f;
     float angleFrom_ = 0.0f, angleTo_ = 0.0f;
     float scaleNow_ = 1.0f;
+    float scaleFrom_ = 1.0f, scaleTo_ = 1.0f;
     double rotStart_ = -1.0;
     double rotSeconds_ = 0.42;
     bool rotating_ = false;

@@ -45,7 +45,7 @@ struct DeviceLayout {
 struct FrameParams {
     float centerX = 0, centerY = 0; // device centre, in window pixels
     float angleDeg = 0;             // 0 = portrait, -90 = top edge to the left
-    float scale = 1.0f;             // uniform shrink, used mid-pivot (see SweepScale)
+    float scale = 1.0f;             // uniform scale: per orientation, and mid-pivot
     RectF video;                    // upright, window pixels
     float videoAlpha = 1.0f;
 };
@@ -65,12 +65,6 @@ float ShadowMargin(const DeviceLayout &L);
 
 // Axis-aligned half-extent once rotated by angleDeg.
 void RotatedExtent(float hx, float hy, float angleDeg, float &ax, float &ay);
-
-// Largest uniform scale at which an hx*hy device turned to angleDeg still fits
-// a square of half-side fitHalf. Exactly 1 at the quadrant angles and dipping
-// around 45 degrees, which is what lets the window stay one fixed size for the
-// whole pivot instead of being resized (and glitching) part-way through.
-float SweepScale(float hx, float hy, float fitHalf, float angleDeg);
 
 // Panel rectangle, as an offset from the device centre, at a quadrant angle.
 RectF PanelRectAt(const DeviceLayout &L, float angleDeg);

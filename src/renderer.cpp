@@ -399,14 +399,6 @@ void RotatedExtent(float hx, float hy, float angleDeg, float &ax, float &ay) {
     ay = hx * s + hy * c;
 }
 
-float SweepScale(float hx, float hy, float fitHalf, float angleDeg) {
-    if (fitHalf <= 1.0f) return 1.0f;
-    float ax, ay;
-    RotatedExtent(hx, hy, angleDeg, ax, ay);
-    const float need = std::max(ax, ay);
-    return (need <= fitHalf) ? 1.0f : fitHalf / need;
-}
-
 RectF PanelRectAt(const DeviceLayout &L, float angleDeg) {
     const float r = angleDeg * 3.14159265358979f / 180.0f;
     const float c = std::cos(r);

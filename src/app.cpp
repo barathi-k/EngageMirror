@@ -111,13 +111,17 @@ float Smooth01(float x) {
     return x * x * (3.0f - 2.0f * x);
 }
 
-// The window is a square big enough for the device in any orientation, plus
-// room for the shadow. Keeping it orientation-independent is what lets a pivot
-// happen without a single SetWindowPos / ResizeBuffers along the way.
-float WindowSideFor(const DeviceLayout &L) {
+// The window holds the device in either orientation - each at its own scale,
+// landK being landscape's - plus room for the shadow. Keeping it
+// orientation-independent is what lets a pivot happen without a single
+// SetWindowPos / ResizeBuffers along the way.
+void WindowSizeFor(const DeviceLayout &L, float landK, float &w, float &h) {
     float hx, hy;
     DeviceExtent(L, hx, hy);
-    return 2.0f * std::max(hx, hy) + 2.0f * ShadowMargin(L);
+    const float m = ShadowMargin(L);
+    const float pw = 2.0f * (hx + m), ph = 2.0f * (hy + m);
+    w = std::max(pw, ph * landK);
+    h = std::max(ph, pw * landK);
 }
 
 // Two stream sizes count as the same picture if they are the same way up and
@@ -212,12 +216,40 @@ float App::BaseLongEdge() const {
     return workH * 0.80f * userScale_;
 }
 
-// Largest square window that still sits on the monitor. Zooming in is allowed
-// to exceed it, otherwise `+` would stop doing anything.
-float App::WorkAreaLimit() const {
+// Largest window that still sits on the monitor. Zooming in is allowed to
+// exceed it, otherwise `+` would stop doing anything.
+void App::WorkAreaLimits(float &w, float &h) const {
     float workW = 1920.0f, workH = 1080.0f;
     WorkAreaPx(workW, workH);
-    return std::min(workW, workH) * 0.97f * std::max(userScale_, 1.0f);
+    w = workW * 0.97f * std::max(userScale_, 1.0f);
+    h = workH * 0.97f * std::max(userScale_, 1.0f);
+}
+
+// Portrait is sized to the screen's height. Turned sideways the device may use
+// the screen's width as well, while staying no taller than it is in portrait.
+// A single square window - the old scheme - capped a landscape device at the
+// screen's height, so on a widescreen display an iPad filled half of it.
+float App::LandscapeScale() const {
+    float workW = 1920.0f, workH = 1080.0f;
+    WorkAreaPx(workW, workH);
+    float hx, hy;
+    DeviceExtent(dev_, hx, hy);
+    const float m = ShadowMargin(dev_);
+    const float pw = 2.0f * (hx + m), ph = 2.0f * (hy + m);
+    if (pw < 1.0f || ph < 1.0f) return 1.0f;
+    return std::min(0.92f * workW * userScale_ / ph, ph / pw);
+}
+
+float App::OrientScale(float angleDeg) const {
+    const bool sideways = std::fabs(std::sin(angleDeg * 3.14159265358979f / 180.0f)) > 0.5f;
+    return sideways ? landK_ : 1.0f;
+}
+
+float App::FitScale(float angleDeg) const {
+    float ax, ay;
+    RotatedExtent(devHx_ + shadowM_, devHy_ + shadowM_, angleDeg, ax, ay);
+    if (ax < 1.0f || ay < 1.0f) return 1.0f;
+    return std::min(winW_ * 0.5f / ax, winH_ * 0.5f / ay);
 }
 
 float App::TargetAngle() const {
@@ -237,18 +269,24 @@ void App::RebuildDevice() {
 
     float longPx = BaseLongEdge();
     dev_ = ComputeDeviceLayout(profile, skin, appliedW_, appliedH_, longPx);
+    landK_ = LandscapeScale();
 
-    // The square window has to fit the monitor; everything scales linearly with
+    // The window has to fit the monitor; everything scales linearly with
     // longPx, so one correction pass lands on it.
-    const float limit = WorkAreaLimit();
-    const float side = WindowSideFor(dev_);
-    if (side > limit && side > 1.0f) {
-        longPx *= limit / side;
+    float limW, limH, w, h;
+    WorkAreaLimits(limW, limH);
+    WindowSizeFor(dev_, landK_, w, h);
+    const float over = std::max(w / limW, h / limH);
+    if (over > 1.0f) {
+        longPx /= over;
         dev_ = ComputeDeviceLayout(profile, skin, appliedW_, appliedH_, longPx);
+        landK_ = LandscapeScale();
     }
 
     DeviceExtent(dev_, devHx_, devHy_);
-    fitHalf_ = std::max(devHx_, devHy_);
+    shadowM_ = ShadowMargin(dev_);
+    WindowSizeFor(dev_, landK_, winW_, winH_);
+    if (!rotating_) scaleNow_ = OrientScale(angleDeg_);
 
     renderer_.SetProfile(profile);
     renderer_.SetSkin(skin);
@@ -349,7 +387,7 @@ void App::ApplyGeometry(float sw, float sh) {
         StartRotation(true);
     } else {
         angleDeg_ = TargetAngle();
-        scaleNow_ = 1.0f;
+        scaleNow_ = OrientScale(angleDeg_);
         rotating_ = false;
         orientSettled_ = NowSeconds();
         RecomputeVideoRect();
@@ -375,13 +413,15 @@ void App::StartRotation(bool contentWillChange) {
     if (std::fabs(delta) < 0.5f) {
         rotating_ = false;
         angleDeg_ = target;
-        scaleNow_ = 1.0f;
+        scaleNow_ = OrientScale(target);
         videoNow_ = videoTo_;
         return;
     }
 
     angleFrom_ = angleDeg_;
     angleTo_ = angleDeg_ + delta;
+    scaleFrom_ = scaleNow_;
+    scaleTo_ = OrientScale(target);
     rotStart_ = now;
     rotSeconds_ = kRotBaseSeconds + 0.0016 * std::fabs(delta);
     rotating_ = true;
@@ -390,7 +430,7 @@ void App::StartRotation(bool contentWillChange) {
 void App::FinishRotation() {
     rotating_ = false;
     angleDeg_ = WrapDeg(angleTo_);
-    scaleNow_ = 1.0f;
+    scaleNow_ = OrientScale(angleDeg_);
     videoNow_ = videoTo_;
     orientSettled_ = NowSeconds();
 
@@ -420,8 +460,7 @@ void App::AdoptFrame(VideoFrameRef &&f) {
 }
 
 void App::ResizeWindow() {
-    const int side = (int)std::ceil(WindowSideFor(dev_));
-    SetWindowSizeKeepCenter(side, side);
+    SetWindowSizeKeepCenter((int)std::ceil(winW_), (int)std::ceil(winH_));
 }
 
 bool App::HitsDevice(int clientX, int clientY) const {
@@ -521,11 +560,13 @@ bool App::Tick() {
         if (t >= 1.0f) {
             FinishRotation();
         } else {
-            angleDeg_ = Lerpf(angleFrom_, angleTo_, EaseInOut(t));
-            // Shrink just enough to stay inside the fixed square window. Peaks
-            // around 45 degrees and is exactly 1 at either end, so the window
-            // never has to be resized part-way through the turn.
-            scaleNow_ = SweepScale(devHx_, devHy_, fitHalf_, angleDeg_);
+            const float e = EaseInOut(t);
+            angleDeg_ = Lerpf(angleFrom_, angleTo_, e);
+            // Each orientation has its own size; blend between them, and shrink
+            // further only where the turning device would otherwise leave the
+            // fixed window (around 45 degrees). Exact at either end, so the
+            // window never has to be resized part-way through the turn.
+            scaleNow_ = std::min(Lerpf(scaleFrom_, scaleTo_, e), FitScale(angleDeg_));
         }
     }
 
@@ -785,7 +826,7 @@ void App::SetWindowSizeKeepCenter(int w, int h) {
         int x = rc.left + curW / 2 - w / 2;
         int y = rc.top + curH / 2 - h / 2;
 
-        // The square is a good deal larger than the device, so growing around
+        // The window is a good deal larger than the device, so growing around
         // the centre can push it off the monitor - nudge it back on.
         MONITORINFO mi{sizeof(MONITORINFO)};
         if (GetMonitorInfoW(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST), &mi)) {
@@ -866,7 +907,7 @@ LRESULT App::HandleMessage(UINT msg, WPARAM wp, LPARAM lp, bool &handled) {
         return 0;
 
     case WM_NCHITTEST: {
-        // The window is a square that fits the device either way up, so it is
+        // The window fits the device either way up, so it is
         // always bigger than the chassis; only the chassis catches the mouse.
         POINT pt{GET_X_LPARAM(lp), GET_Y_LPARAM(lp)};
         ScreenToClient(window_, &pt);

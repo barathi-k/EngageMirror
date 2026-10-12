@@ -224,8 +224,11 @@ the device is held. That is what a real device does when its UI counter-rotates.
 Three things make it smooth, and each was a distinct source of the stutter this
 replaced:
 
-1. **The window never changes size.** It is a square, sized once from the
-   device's long edge plus the shadow, so it fits either orientation. Nothing
+1. **The window never changes size.** It is sized once to hold the device in
+   *both* orientations plus the shadow. Each orientation gets its own best fit:
+   portrait to about 85 % of the screen's height, landscape to up to 92 % of
+   its width while staying no taller than portrait, so a sideways device fills
+   a widescreen display instead of a square the height of the screen. Nothing
    calls `SetWindowPos` or `ResizeBuffers` during a pivot. This matters more
    than it sounds: a DirectComposition swap chain is pinned to the window's
    client origin at 1:1, so for the frame or two between the HWND changing size
@@ -233,11 +236,13 @@ replaced:
    gets cropped at the bottom-right and shoved off-centre. That was the "the
    whole app is cropped, then it comes back" glitch.
 
-   A square that fits at 0° and 90° is still too small at 45°, where a *w*×*h*
-   device needs (*w*+*h*)/√2 in both axes. Rather than grow the window,
-   `SweepScale` shrinks the chassis by just enough to stay inside — exactly 1
-   at either end, dipping ~20 % mid-turn for a near-square iPad and barely 3 %
-   for a phone. It reads as the device tipping away as it turns.
+   Through the turn the scale blends from one orientation's fit to the
+   other's, and a window that fits at 0° and 90° is still too small at 45°,
+   where a *w*×*h* device needs (*w*+*h*)/√2 in both axes. Rather than grow the
+   window, `App::FitScale` shrinks the chassis by just enough to stay inside;
+   it is exact at either end. It reads as the device tipping away as it turns.
+   On macOS the shader only runs over the device's own bounding box, so the
+   transparent rest of the window costs nothing to draw.
 
 2. **The picture goes down before the chassis moves.** By the time the pivot
    starts, the stream has *already* switched orientation, so the very next
