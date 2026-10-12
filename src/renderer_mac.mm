@@ -378,6 +378,7 @@ void Renderer::DrawText(const TexView &srv, int w, int h, float cx, float cy, fl
 
 void Renderer::Render() {
     if (!gpu_ || !pipeFrame_) return;
+    PrepareText();
 
     @autoreleasepool {
         id<CAMetalDrawable> drawable = [gpu_->Layer() nextDrawable];
@@ -411,7 +412,7 @@ void Renderer::Render() {
             const RectF panel = PanelRectAt(device_, frame_.angleDeg);
             const float cx = frame_.centerX + panel.cx * frame_.scale;
             const float cy = frame_.centerY + panel.cy * frame_.scale;
-            const float gap = 16.0f * gpu_->Scale();
+            const float gap = 16.0f * gpu_->Scale() * textScale_;
             if (titleTex_) DrawText(titleTex_, titleW_, titleH_, cx, cy - gap, 0.92f);
             if (subTex_) DrawText(subTex_, subW_, subH_, cx, cy + gap, 0.55f);
         }

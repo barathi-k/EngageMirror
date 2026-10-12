@@ -477,16 +477,55 @@ void Renderer::ClearVideo() {
 }
 
 void Renderer::SetStatusText(const std::string &title, const std::string &subtitle) {
-    if (title != titleStr_) {
-        titleStr_ = title;
-        titleTex_.reset();
-        MakeTextTexture(*gpu_, title, 22, true, titleTex_, titleW_, titleH_);
+    if (title == titleStr_ && subtitle == subStr_) return;
+    titleStr_ = title;
+    subStr_ = subtitle;
+    textDirty_ = true;
+}
+
+// The device is sized to the screen and the user's zoom, the text is not: a
+// long computer name on a small screen used to run straight off both sides of
+// the device. Shrink it to the panel's on-screen width - re-rasterized at the
+// smaller size rather than scaled down, so it stays crisp - and only if half
+// size still does not fit, truncate it with an ellipsis.
+void Renderer::PrepareText() {
+    if (hasVideo_) return;
+    if (textDirty_) {
+        textDirty_ = false;
+        MakeTextTexture(*gpu_, titleStr_, 22, true, titleTex_, titleW_, titleH_);
+        MakeTextTexture(*gpu_, subStr_, 15, false, subTex_, subW_, subH_);
+        titleBaseW_ = titleTex_ ? titleW_ : 0;
+        subBaseW_ = subTex_ ? subW_ : 0;
+        textScale_ = 1.0f;
+        titlePx_ = 22;
+        subPx_ = 15;
+        textMaxW_ = 0;
     }
-    if (subtitle != subStr_) {
-        subStr_ = subtitle;
-        subTex_.reset();
-        MakeTextTexture(*gpu_, subtitle, 15, false, subTex_, subW_, subH_);
+    const RectF panel = PanelRectAt(device_, frame_.angleDeg);
+    const float avail = 2.0f * panel.hx * frame_.scale * 0.86f;
+    const float widest = (float)std::max(titleBaseW_, subBaseW_);
+    if (avail < 1.0f || widest < 1.0f) return;
+
+    float s = 1.0f;
+    bool cut = false;
+    if (widest > avail) {
+        s = avail / widest;
+        if (s < 0.5f) {
+            s = 0.5f;
+            cut = true;
+        }
     }
+    // Rounded down, so the shrunk text is never wider than what was measured.
+    const int titlePx = std::max(1, (int)(22.0f * s));
+    const int subPx = std::max(1, (int)(15.0f * s));
+    const int maxW = cut ? (int)avail : 0;
+    if (titlePx == titlePx_ && subPx == subPx_ && maxW == textMaxW_) return;
+    titlePx_ = titlePx;
+    subPx_ = subPx;
+    textMaxW_ = maxW;
+    textScale_ = s;
+    MakeTextTexture(*gpu_, titleStr_, titlePx, true, titleTex_, titleW_, titleH_, maxW);
+    MakeTextTexture(*gpu_, subStr_, subPx, false, subTex_, subW_, subH_, maxW);
 }
 
 void Renderer::FillFrameCB(FrameCB &cb, float vpW, float vpH) const {
@@ -665,6 +704,7 @@ void Renderer::DrawText(const TexView &srv, int w, int h, float cx, float cy,
 
 void Renderer::Render() {
     if (!gpu_ || !gpu_->BackBufferRTV()) return;
+    PrepareText();
 
     GpuLock lk(*gpu_);
     auto *ctx = gpu_->Context();
@@ -716,8 +756,9 @@ void Renderer::Render() {
         const RectF panel = PanelRectAt(device_, frame_.angleDeg);
         const float cx = frame_.centerX + panel.cx * frame_.scale;
         const float cy = frame_.centerY + panel.cy * frame_.scale;
-        if (titleTex_) DrawText(titleTex_, titleW_, titleH_, cx, cy - 16.0f, 0.92f);
-        if (subTex_) DrawText(subTex_, subW_, subH_, cx, cy + 16.0f, 0.55f);
+        const float gap = 16.0f * textScale_;
+        if (titleTex_) DrawText(titleTex_, titleW_, titleH_, cx, cy - gap, 0.92f);
+        if (subTex_) DrawText(subTex_, subW_, subH_, cx, cy + gap, 0.55f);
     }
 
     // Leave nothing bound: the decoder may recycle these textures next frame.

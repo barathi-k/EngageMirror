@@ -133,5 +133,7 @@ class Gpu {
 // Renders a UTF-8 string to a premultiplied-alpha BGRA texture, white on
 // transparent. Used only for the idle/status overlay, so the cost is
 // irrelevant. pixelHeight is in layout pixels and is scaled by Gpu::Scale().
+// A texture wider than maxWidth physical pixels (0 = no limit) is truncated
+// with an ellipsis.
 bool MakeTextTexture(Gpu &gpu, const std::string &text, int pixelHeight, bool bold,
-                     TexView &outSrv, int &outW, int &outH);
+                     TexView &outSrv, int &outW, int &outH, int maxWidth = 0);

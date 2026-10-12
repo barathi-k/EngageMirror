@@ -115,7 +115,7 @@ void Gpu::Shutdown() {
 // CoreText text -> premultiplied BGRA texture
 // ---------------------------------------------------------------------------
 bool MakeTextTexture(Gpu &gpu, const std::string &utf8, int pixelHeight, bool bold,
-                     TexView &outSrv, int &outW, int &outH) {
+                     TexView &outSrv, int &outW, int &outH, int maxWidth) {
     outSrv.reset();
     if (utf8.empty()) return false;
 
@@ -132,9 +132,24 @@ bool MakeTextTexture(Gpu &gpu, const std::string &utf8, int pixelHeight, bool bo
     CTLineRef line = CTLineCreateWithAttributedString(as);
     CFRelease(as);
 
+    const int pad = (int)std::ceil(2 * gpu.Scale());
+    if (maxWidth > 2 * pad &&
+        CTLineGetTypographicBounds(line, nullptr, nullptr, nullptr) > maxWidth - 2 * pad) {
+        CFAttributedStringRef dots = (__bridge_retained CFAttributedStringRef)
+            [[NSAttributedString alloc] initWithString:@"\u2026" attributes:attrs];
+        CTLineRef token = CTLineCreateWithAttributedString(dots);
+        CFRelease(dots);
+        CTLineRef cut = CTLineCreateTruncatedLine(line, maxWidth - 2 * pad,
+                                                  kCTLineTruncationEnd, token);
+        CFRelease(token);
+        if (cut) {
+            CFRelease(line);
+            line = cut;
+        }
+    }
+
     CGFloat ascent = 0, descent = 0, leading = 0;
     const double width = CTLineGetTypographicBounds(line, &ascent, &descent, &leading);
-    const int pad = (int)std::ceil(2 * gpu.Scale());
     const int w = (int)std::ceil(width) + 2 * pad;
     const int h = (int)std::ceil(ascent + descent) + 2 * pad;
     if (w <= 0 || h <= 0) {

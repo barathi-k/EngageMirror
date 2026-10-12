@@ -266,7 +266,7 @@ bool Gpu::CompilePS(const char *src, const char *entry, Com<ID3D11PixelShader> &
 // GDI text -> premultiplied RGBA texture
 // ---------------------------------------------------------------------------
 bool MakeTextTexture(Gpu &gpu, const std::string &utf8, int pixelHeight, bool bold,
-                     TexView &outSrv, int &outW, int &outH) {
+                     TexView &outSrv, int &outW, int &outH, int maxWidth) {
     outSrv.reset();
     if (utf8.empty()) return false;
     const std::wstring text = Widen(utf8);
@@ -287,6 +287,7 @@ bool MakeTextTexture(Gpu &gpu, const std::string &utf8, int pixelHeight, bool bo
               DT_CALCRECT | DT_SINGLELINE | DT_NOPREFIX);
     int w = measure.right - measure.left + 8;
     int h = measure.bottom - measure.top + 4;
+    if (maxWidth > 8 && w > maxWidth) w = maxWidth; // DrawTextW ellipsizes below
     if (w <= 0 || h <= 0) {
         SelectObject(dc, oldFont);
         DeleteObject(font);
@@ -315,8 +316,9 @@ bool MakeTextTexture(Gpu &gpu, const std::string &utf8, int pixelHeight, bool bo
 
     SetBkMode(dc, TRANSPARENT);
     SetTextColor(dc, RGB(255, 255, 255));
-    RECT rc{4, 2, w, h};
-    DrawTextW(dc, text.c_str(), (int)text.size(), &rc, DT_SINGLELINE | DT_NOPREFIX);
+    RECT rc{4, 2, w - 4, h};
+    DrawTextW(dc, text.c_str(), (int)text.size(), &rc,
+              DT_SINGLELINE | DT_NOPREFIX | DT_END_ELLIPSIS);
     GdiFlush();
 
     // White text was drawn on black: use luminance as the alpha channel and

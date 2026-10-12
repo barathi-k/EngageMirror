@@ -153,6 +153,9 @@ class Renderer {
 
     // Everything the frame shader needs, for a viewport of vpW x vpH pixels.
     void FillFrameCB(FrameCB &cb, float vpW, float vpH) const;
+    // Rasterizes the status text at a size that fits the panel as currently
+    // drawn; called at the start of every Render().
+    void PrepareText();
     void DrawText(const TexView &srv, int w, int h, float cx, float cy, float alpha);
 
     Gpu *gpu_ = nullptr;
@@ -187,4 +190,8 @@ class Renderer {
     TexView titleTex_, subTex_;
     int titleW_ = 0, titleH_ = 0, subW_ = 0, subH_ = 0;
     std::string titleStr_, subStr_;
+    bool textDirty_ = false;
+    int titleBaseW_ = 0, subBaseW_ = 0;   // widths at full size
+    float textScale_ = 1.0f;              // size the textures were made at
+    int titlePx_ = 0, subPx_ = 0, textMaxW_ = 0; // what they were made with
 };
